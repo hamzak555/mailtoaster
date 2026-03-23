@@ -1,3 +1,5 @@
+import type { AppAppearanceSettings } from './appearance';
+
 export const APP_NAME = 'Mail Toaster';
 
 export type MailboxProvider = 'gmail' | 'outlook';
@@ -38,6 +40,7 @@ export interface PersistedAppState {
   selectedInboxId: string | null;
   windowBounds: PersistedWindowBounds | null;
   mailboxNotificationState: Record<string, PersistedMailboxNotificationState>;
+  appearanceSettings: AppAppearanceSettings;
 }
 
 export function compareMailboxes(left: MailboxRecord, right: MailboxRecord): number {

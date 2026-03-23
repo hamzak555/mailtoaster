@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Notification as ElectronNotification, type Rectangle, shell, type WebContents, WebContentsView } from 'electron';
 
+import { DEFAULT_APP_APPEARANCE_SETTINGS, isAppAccentThemeId, type AppAppearanceSettings, type AppAccentThemeId } from '@shared/appearance';
 import {
   getAggregateUnreadCount,
   getDefaultDisplayName,
@@ -224,8 +225,10 @@ export class MailboxManager {
   private readonly primedUnreadInboxIds = new Set<string>();
   private readonly unreadNotificationStateByInboxId: Map<string, PersistedMailboxNotificationState>;
   private inboxes: MailboxRecord[];
+  private appearanceSettings: AppAppearanceSettings;
   private selectedInboxId: string | null;
   private attachedInboxId: string | null = null;
+  private nativeOverlayVisible = false;
   private viewport: Rectangle = { x: 0, y: 0, width: 0, height: 0 };
 
   constructor(
@@ -235,6 +238,7 @@ export class MailboxManager {
     const state = this.store.getState();
 
     this.inboxes = [...state.inboxes].sort(compareMailboxes);
+    this.appearanceSettings = state.appearanceSettings ?? DEFAULT_APP_APPEARANCE_SETTINGS;
     this.selectedInboxId = this.resolveSelectedInbox(state.selectedInboxId);
     this.unreadNotificationStateByInboxId = new Map(
       Object.entries(state.mailboxNotificationState).map(([mailboxId, notificationState]) => [mailboxId, { ...notificationState }]),
@@ -280,7 +284,31 @@ export class MailboxManager {
       inboxes: [...this.inboxes].sort(compareMailboxes),
       selectedInboxId: this.selectedInboxId,
       viewStates: Object.fromEntries(this.viewStates.entries()),
+      appearanceSettings: this.appearanceSettings,
     };
+  }
+
+  async setAccentTheme(accentThemeId: AppAccentThemeId): Promise<void> {
+    if (!isAppAccentThemeId(accentThemeId) || this.appearanceSettings.accentThemeId === accentThemeId) {
+      return;
+    }
+
+    this.appearanceSettings = {
+      ...this.appearanceSettings,
+      accentThemeId,
+    };
+
+    this.persistState();
+    this.emitState();
+  }
+
+  async setNativeOverlayVisible(visible: boolean): Promise<void> {
+    if (this.nativeOverlayVisible === visible) {
+      return;
+    }
+
+    this.nativeOverlayVisible = visible;
+    this.attachSelectedView();
   }
 
   async createInbox(input: CreateMailboxInput): Promise<void> {
@@ -611,7 +639,12 @@ export class MailboxManager {
   }
 
   private persistState(): void {
-    this.store.saveMailboxState(this.inboxes, this.selectedInboxId, this.getPersistedNotificationState());
+    this.store.saveMailboxState(
+      this.inboxes,
+      this.selectedInboxId,
+      this.getPersistedNotificationState(),
+      this.appearanceSettings,
+    );
   }
 
   private emitState(): void {
@@ -638,6 +671,11 @@ export class MailboxManager {
   }
 
   private attachSelectedView(): void {
+    if (this.nativeOverlayVisible) {
+      this.detachCurrentView();
+      return;
+    }
+
     const selectedInbox = this.getSelectedInbox();
 
     if (!selectedInbox || selectedInbox.sleepState === 'sleeping' || this.viewport.width <= 0 || this.viewport.height <= 0) {

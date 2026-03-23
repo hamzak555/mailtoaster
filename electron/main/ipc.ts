@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 
+import { type AppAccentThemeId } from '@shared/appearance';
 import { IPC_CHANNELS, type AppUpdateState, type CreateMailboxInput, type MailboxViewport } from '@shared/ipc';
 
 import { MailboxManager } from '../mailboxes/mailbox-manager';
@@ -24,6 +25,12 @@ export function registerIpcHandlers(provider: ManagerProvider): void {
   ipcMain.handle(IPC_CHANNELS.getState, () => resolveManager(provider).getState());
   ipcMain.handle(IPC_CHANNELS.getAppUpdateState, () => provider.getAppUpdateState());
   ipcMain.handle(IPC_CHANNELS.installDownloadedUpdate, () => provider.installDownloadedUpdate());
+  ipcMain.handle(IPC_CHANNELS.setAccentTheme, (_event, accentThemeId: AppAccentThemeId) =>
+    resolveManager(provider).setAccentTheme(accentThemeId),
+  );
+  ipcMain.handle(IPC_CHANNELS.setNativeOverlayVisible, (_event, visible: boolean) =>
+    resolveManager(provider).setNativeOverlayVisible(visible),
+  );
   ipcMain.handle(IPC_CHANNELS.createInbox, (_event, input: CreateMailboxInput) => resolveManager(provider).createInbox(input));
   ipcMain.handle(IPC_CHANNELS.reorderInboxes, (_event, orderedInboxIds: string[]) =>
     resolveManager(provider).reorderInboxes(orderedInboxIds),

@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useEffectEvent, useMemo, useState } from 'react';
 
+import { DEFAULT_APP_APPEARANCE_SETTINGS, type AppAccentThemeId } from '@shared/appearance';
 import type { MailboxRecord } from '@shared/mailboxes';
 import type { CreateMailboxInput, MailToasterState, MailboxViewport } from '@shared/ipc';
 
@@ -9,6 +10,7 @@ const EMPTY_STATE: MailToasterState = {
   inboxes: [],
   selectedInboxId: null,
   viewStates: {},
+  appearanceSettings: DEFAULT_APP_APPEARANCE_SETTINGS,
 };
 
 function getApi() {
@@ -73,6 +75,12 @@ export function useMailToaster() {
 
   const actions = useMemo(
     () => ({
+      setAccentTheme: async (accentThemeId: AppAccentThemeId) => {
+        await getApi().setAccentTheme(accentThemeId);
+      },
+      setNativeOverlayVisible: async (visible: boolean) => {
+        await getApi().setNativeOverlayVisible(visible);
+      },
       createInbox: async (input: CreateMailboxInput) => {
         await getApi().createInbox(input);
       },

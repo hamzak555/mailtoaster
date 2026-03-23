@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { DEFAULT_APP_APPEARANCE_SETTINGS, isAppAccentThemeId, type AppAppearanceSettings } from '@shared/appearance';
 import type {
   MailboxRecord,
   PersistedAppState,
@@ -9,7 +10,7 @@ import type {
 } from '@shared/mailboxes';
 
 const STORE_FILE_NAME = 'mail-toaster-state.json';
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 const DEFAULT_STATE: PersistedAppState = {
   version: STORE_VERSION,
@@ -17,6 +18,7 @@ const DEFAULT_STATE: PersistedAppState = {
   selectedInboxId: null,
   windowBounds: null,
   mailboxNotificationState: {},
+  appearanceSettings: DEFAULT_APP_APPEARANCE_SETTINGS,
 };
 
 function isPersistedMailboxNotificationState(value: unknown): value is PersistedMailboxNotificationState {
@@ -26,6 +28,18 @@ function isPersistedMailboxNotificationState(value: unknown): value is Persisted
 
   const candidate = value as Partial<PersistedMailboxNotificationState>;
   return candidate.lastUnreadNotificationSignature === null || typeof candidate.lastUnreadNotificationSignature === 'string';
+}
+
+function sanitizeAppearanceSettings(value: unknown): AppAppearanceSettings {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_APP_APPEARANCE_SETTINGS };
+  }
+
+  const candidate = value as Partial<AppAppearanceSettings>;
+
+  return {
+    accentThemeId: isAppAccentThemeId(candidate.accentThemeId) ? candidate.accentThemeId : DEFAULT_APP_APPEARANCE_SETTINGS.accentThemeId,
+  };
 }
 
 function isMailboxRecord(value: unknown): value is MailboxRecord {
@@ -91,6 +105,7 @@ function sanitizeState(value: unknown): PersistedAppState {
             ),
           )
         : {},
+    appearanceSettings: sanitizeAppearanceSettings(candidate.appearanceSettings),
   };
 }
 
@@ -111,6 +126,7 @@ export class AppStore {
     inboxes: MailboxRecord[],
     selectedInboxId: string | null,
     mailboxNotificationState: Record<string, PersistedMailboxNotificationState>,
+    appearanceSettings: AppAppearanceSettings,
   ): void {
     const activeInboxIds = new Set(inboxes.map((inbox) => inbox.id));
 
@@ -124,6 +140,7 @@ export class AppStore {
             activeInboxIds.has(mailboxId) && isPersistedMailboxNotificationState(notificationState),
         ),
       ),
+      appearanceSettings: sanitizeAppearanceSettings(appearanceSettings),
     };
     this.write();
   }

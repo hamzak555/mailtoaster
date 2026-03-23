@@ -1,3 +1,4 @@
+import type { AppAccentThemeId, AppAppearanceSettings } from './appearance';
 import type { MailboxProvider, MailboxRecord } from './mailboxes';
 
 export interface MailboxViewport {
@@ -11,6 +12,7 @@ export interface MailToasterState {
   inboxes: MailboxRecord[];
   selectedInboxId: string | null;
   viewStates: Record<string, MailboxViewState>;
+  appearanceSettings: AppAppearanceSettings;
 }
 
 export interface CreateMailboxInput {
@@ -49,6 +51,8 @@ export interface MailToasterApi {
   getAppUpdateState: () => Promise<AppUpdateState>;
   subscribeToAppUpdateState: (listener: (state: AppUpdateState) => void) => () => void;
   installDownloadedUpdate: () => Promise<void>;
+  setAccentTheme: (accentThemeId: AppAccentThemeId) => Promise<void>;
+  setNativeOverlayVisible: (visible: boolean) => Promise<void>;
   createInbox: (input: CreateMailboxInput) => Promise<void>;
   reorderInboxes: (orderedInboxIds: string[]) => Promise<void>;
   setInboxCustomIcon: (id: string, customIconDataUrl: string) => Promise<void>;
@@ -73,6 +77,8 @@ export const IPC_CHANNELS = {
   getAppUpdateState: 'mail-toaster:get-app-update-state',
   appUpdateStateChanged: 'mail-toaster:app-update-state-changed',
   installDownloadedUpdate: 'mail-toaster:install-downloaded-update',
+  setAccentTheme: 'mail-toaster:set-accent-theme',
+  setNativeOverlayVisible: 'mail-toaster:set-native-overlay-visible',
   createInbox: 'mail-toaster:create-inbox',
   reorderInboxes: 'mail-toaster:reorder-inboxes',
   setInboxCustomIcon: 'mail-toaster:set-inbox-custom-icon',

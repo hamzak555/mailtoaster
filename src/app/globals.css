@@ -23,6 +23,10 @@
   --success: 142 58% 34%;
   --danger: 3 74% 52%;
   --radius: 1rem;
+  --app-glow-top: rgba(255, 203, 132, 0.28);
+  --app-glow-bottom: rgba(124, 79, 36, 0.18);
+  --app-bg-start: rgba(255, 247, 239, 0.92);
+  --app-bg-end: rgba(244, 235, 226, 0.96);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,6 +50,10 @@
     --ring: 29 88% 62%;
     --success: 142 54% 44%;
     --danger: 5 82% 64%;
+    --app-glow-top: rgba(213, 142, 74, 0.18);
+    --app-glow-bottom: rgba(68, 40, 18, 0.22);
+    --app-bg-start: rgba(25, 18, 14, 0.94);
+    --app-bg-end: rgba(18, 14, 12, 0.98);
   }
 }
 
@@ -61,19 +69,10 @@ body {
 body {
   @apply bg-background font-sans text-foreground antialiased;
   background-image:
-    radial-gradient(circle at top left, rgba(255, 203, 132, 0.28), transparent 24rem),
-    radial-gradient(circle at bottom right, rgba(124, 79, 36, 0.18), transparent 28rem),
-    linear-gradient(180deg, rgba(255, 247, 239, 0.92), rgba(244, 235, 226, 0.96));
+    radial-gradient(circle at top left, var(--app-glow-top), transparent 24rem),
+    radial-gradient(circle at bottom right, var(--app-glow-bottom), transparent 28rem),
+    linear-gradient(180deg, var(--app-bg-start), var(--app-bg-end));
   overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-  body {
-    background-image:
-      radial-gradient(circle at top left, rgba(213, 142, 74, 0.18), transparent 22rem),
-      radial-gradient(circle at bottom right, rgba(68, 40, 18, 0.22), transparent 28rem),
-      linear-gradient(180deg, rgba(25, 18, 14, 0.94), rgba(18, 14, 12, 0.98));
-  }
 }
 
 button,

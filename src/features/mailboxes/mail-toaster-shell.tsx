@@ -10,10 +10,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+import { AppSettingsDialog } from './app-settings-dialog';
 import { InboxRow } from './inbox-row';
 import { InboxSidebarPanel, type SidebarPanelState } from './inbox-sidebar-panel';
 import { MailboxToolbar } from './mailbox-toolbar';
 import { MailboxAvatar } from './provider-presentation';
+import { useAppliedAccentTheme } from './use-applied-accent-theme';
 import { useAppUpdateState } from './use-app-update-state';
 import { useMailToaster } from './use-mail-toaster';
 
@@ -177,6 +179,7 @@ export function MailToasterShell() {
   const { updateState, installDownloadedUpdate } = useAppUpdateState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [panelMode, setPanelMode] = useState<SidebarPanelMode | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [draggedInboxId, setDraggedInboxId] = useState<string | null>(null);
   const [dragOverInboxId, setDragOverInboxId] = useState<string | null>(null);
   const [previewInboxOrderIds, setPreviewInboxOrderIds] = useState<string[] | null>(null);
@@ -218,6 +221,8 @@ export function MailToasterShell() {
   const sidebarUpdateIndicator = useMemo(() => getSidebarUpdateIndicator(updateState), [updateState]);
   const sidebarUpdatePanel = useMemo(() => getSidebarUpdatePanel(updateState), [updateState]);
 
+  useAppliedAccentTheme(state.appearanceSettings.accentThemeId);
+
   const sidebarPanel: SidebarPanelState | null =
     panelMode?.type === 'add'
       ? { type: 'add' }
@@ -251,6 +256,14 @@ export function MailToasterShell() {
       setPreviewInboxOrderIds(null);
     }
   }, [actualInboxOrderIds, draggedInboxId, previewInboxOrderIds]);
+
+  useEffect(() => {
+    void actions.setNativeOverlayVisible(settingsOpen);
+
+    return () => {
+      void actions.setNativeOverlayVisible(false);
+    };
+  }, [actions, settingsOpen]);
 
   useLayoutEffect(() => {
     if (flipFrameRef.current) {
@@ -392,6 +405,13 @@ export function MailToasterShell() {
               setIconUploadTargetId(null);
             });
         }}
+      />
+
+      <AppSettingsDialog
+        accentThemeId={state.appearanceSettings.accentThemeId}
+        open={settingsOpen}
+        onAccentThemeChange={(accentThemeId) => void actions.setAccentTheme(accentThemeId)}
+        onOpenChange={setSettingsOpen}
       />
 
       <main className="flex h-screen flex-col gap-3 p-3 pt-0">
@@ -697,6 +717,7 @@ export function MailToasterShell() {
             <MailboxToolbar
               inbox={selectedInbox ?? null}
               viewState={selectedViewState}
+              onOpenSettings={() => setSettingsOpen(true)}
               onBack={async () => {
                 if (selectedInbox) {
                   await actions.goBackInbox(selectedInbox.id);

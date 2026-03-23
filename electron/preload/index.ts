@@ -8,6 +8,7 @@ import {
   type MailToasterState,
   type MailboxViewport,
 } from '@shared/ipc';
+import type { AppAccentThemeId } from '@shared/appearance';
 
 const api: MailToasterApi = {
   getState: () => ipcRenderer.invoke(IPC_CHANNELS.getState) as Promise<MailToasterState>,
@@ -35,6 +36,10 @@ const api: MailToasterApi = {
     };
   },
   installDownloadedUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.installDownloadedUpdate) as Promise<void>,
+  setAccentTheme: (accentThemeId: AppAccentThemeId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setAccentTheme, accentThemeId) as Promise<void>,
+  setNativeOverlayVisible: (visible: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setNativeOverlayVisible, visible) as Promise<void>,
   createInbox: (input: CreateMailboxInput) => ipcRenderer.invoke(IPC_CHANNELS.createInbox, input) as Promise<void>,
   reorderInboxes: (orderedInboxIds: string[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.reorderInboxes, orderedInboxIds) as Promise<void>,

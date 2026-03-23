@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, House, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, House, RefreshCw, Settings2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { MailboxRecord } from '@shared/mailboxes';
@@ -15,6 +15,7 @@ import { MailboxAvatar } from './provider-presentation';
 interface MailboxToolbarProps {
   inbox: MailboxRecord | null;
   viewState?: MailboxViewState;
+  onOpenSettings: () => void;
   onBack: () => Promise<void>;
   onForward: () => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -22,7 +23,16 @@ interface MailboxToolbarProps {
   onNavigate: (url: string) => Promise<void>;
 }
 
-export function MailboxToolbar({ inbox, viewState, onBack, onForward, onRefresh, onHome, onNavigate }: MailboxToolbarProps) {
+export function MailboxToolbar({
+  inbox,
+  viewState,
+  onOpenSettings,
+  onBack,
+  onForward,
+  onRefresh,
+  onHome,
+  onNavigate,
+}: MailboxToolbarProps) {
   const [draftUrl, setDraftUrl] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -109,7 +119,7 @@ export function MailboxToolbar({ inbox, viewState, onBack, onForward, onRefresh,
       >
         <Input
           className={cn(
-            'h-9 border-[#cdb7a6] bg-[#efe4d6] text-[#2b1f18] shadow-sm placeholder:text-[#6f5645] dark:border-[#3d3027] dark:bg-[#231a15] dark:text-[#f4eadf] dark:placeholder:text-[#a18d80]',
+            'h-9 border-border/70 bg-secondary/72 text-foreground shadow-sm placeholder:text-muted-foreground',
             hasError && 'border-danger/60 focus-visible:ring-danger',
           )}
           disabled={disabled}
@@ -137,6 +147,11 @@ export function MailboxToolbar({ inbox, viewState, onBack, onForward, onRefresh,
           </div>
         </div>
       ) : null}
+
+      <Button className="h-9 w-9 rounded-md" size="icon" type="button" variant="outline" onClick={onOpenSettings}>
+        <Settings2 className="h-4 w-4" />
+        <span className="sr-only">Open settings</span>
+      </Button>
     </div>
   );
 }
