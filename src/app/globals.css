@@ -27,6 +27,10 @@
   --app-glow-bottom: rgba(124, 79, 36, 0.18);
   --app-bg-start: rgba(255, 247, 239, 0.92);
   --app-bg-end: rgba(244, 235, 226, 0.96);
+  --toolbar-field: color-mix(in oklab, hsl(var(--primary)) 14%, black);
+  --toolbar-field-border: color-mix(in oklab, hsl(var(--primary)) 22%, hsl(var(--border)));
+  --toolbar-field-foreground: color-mix(in oklab, white 88%, hsl(var(--foreground)));
+  --toolbar-field-placeholder: color-mix(in oklab, white 58%, hsl(var(--muted-foreground)));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,6 +58,10 @@
     --app-glow-bottom: rgba(68, 40, 18, 0.22);
     --app-bg-start: rgba(25, 18, 14, 0.94);
     --app-bg-end: rgba(18, 14, 12, 0.98);
+    --toolbar-field: color-mix(in oklab, hsl(var(--primary)) 16%, black);
+    --toolbar-field-border: color-mix(in oklab, hsl(var(--primary)) 26%, hsl(var(--border)));
+    --toolbar-field-foreground: color-mix(in oklab, white 92%, hsl(var(--foreground)));
+    --toolbar-field-placeholder: color-mix(in oklab, white 46%, hsl(var(--muted-foreground)));
   }
 }
 

@@ -5,7 +5,7 @@ import { Check, Palette } from 'lucide-react';
 import { APP_ACCENT_THEMES, type AppAccentThemeId } from '@shared/appearance';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 interface AppSettingsDialogProps {
@@ -24,14 +24,13 @@ export function AppSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[34rem]">
-        <DialogHeader>
+        <DialogHeader className="pb-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/80 text-primary">
               <Palette className="h-5 w-5" />
             </div>
-            <div className="space-y-1">
+            <div>
               <DialogTitle>Appearance</DialogTitle>
-              <DialogDescription>Pick the accent color for Mail Toaster. Changes apply immediately.</DialogDescription>
             </div>
           </div>
         </DialogHeader>

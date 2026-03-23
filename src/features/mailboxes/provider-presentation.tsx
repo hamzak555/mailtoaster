@@ -24,7 +24,13 @@ export function MailboxAvatar({
   const displayImage = customIconDataUrl ?? accountAvatarDataUrl;
 
   return (
-    <div className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary', className)}>
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary',
+        displayImage && 'border-2 border-primary/30 bg-card/80 shadow-[0_0_0_1px_hsl(var(--background)/0.55)]',
+        className,
+      )}
+    >
       {displayImage ? (
         <img alt="" src={displayImage} className="h-full w-full object-cover" draggable={false} />
       ) : (

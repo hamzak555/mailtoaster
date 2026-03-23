@@ -691,7 +691,7 @@ export function MailToasterShell() {
 
             <Button
               className={cn(
-                'absolute right-2 top-1/2 z-10 h-14 w-7 -translate-y-1/2 rounded-full border border-border/35 bg-card/96 px-0 shadow-[0_14px_34px_-20px_hsl(var(--foreground)/0.65)] backdrop-blur-xl transition hover:bg-card dark:border-border/55 dark:bg-card/94',
+                'absolute right-2.5 top-1/2 z-10 h-14 w-7 -translate-y-1/2 rounded-full border border-border/35 bg-card/96 px-0 shadow-[0_14px_34px_-20px_hsl(var(--foreground)/0.65)] backdrop-blur-xl transition hover:bg-card dark:border-border/55 dark:bg-card/94',
                 sidebarCollapsed ? 'shadow-[0_16px_36px_-22px_hsl(var(--foreground)/0.75)]' : '',
               )}
               size="icon"

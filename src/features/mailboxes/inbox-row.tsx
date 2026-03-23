@@ -81,7 +81,7 @@ export function InboxRow({
       draggable
       className={cn(
         'group relative flex items-center gap-2 rounded-xl border p-1.5 transition',
-        active ? 'border-primary/18 bg-white/80 shadow-soft dark:bg-card/80' : 'border-transparent bg-transparent hover:bg-card/55',
+        active ? 'border-primary/28 bg-card/88 shadow-soft' : 'border-transparent bg-transparent hover:bg-card/55',
         dragOver && 'border-primary/28 bg-primary/8',
         dragging && 'scale-[0.985] opacity-55',
         inbox.sleepState === 'sleeping' && 'opacity-80',

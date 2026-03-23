@@ -119,7 +119,7 @@ export function MailboxToolbar({
       >
         <Input
           className={cn(
-            'h-9 border-border/70 bg-secondary/72 text-foreground shadow-sm placeholder:text-muted-foreground',
+            'h-9 border-[var(--toolbar-field-border)] bg-[var(--toolbar-field)] text-[var(--toolbar-field-foreground)] shadow-sm placeholder:text-[var(--toolbar-field-placeholder)]',
             hasError && 'border-danger/60 focus-visible:ring-danger',
           )}
           disabled={disabled}
