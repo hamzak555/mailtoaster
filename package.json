@@ -43,7 +43,7 @@
         "provider": "github",
         "owner": "hamzak555",
         "repo": "mailtoaster",
-        "releaseType": "draft"
+        "releaseType": "release"
       }
     ],
     "mac": {
