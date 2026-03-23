@@ -6,6 +6,7 @@ interface AppMenuOptions {
 
 export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void {
   const isMac = process.platform === 'darwin';
+  const isPackaged = app.isPackaged;
   const updateMenuItems: Electron.MenuItemConstructorOptions[] = onCheckForUpdates
     ? [
         {
@@ -19,8 +20,6 @@ export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void
     { role: 'about' },
     { type: 'separator' },
     ...updateMenuItems,
-    { role: 'services' },
-    { type: 'separator' },
     { role: 'hide' },
     { role: 'hideOthers' },
     { role: 'unhide' },
@@ -37,10 +36,10 @@ export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void
     { role: 'selectAll' },
   ];
   const viewMenu: Electron.MenuItemConstructorOptions[] = [
-    { role: 'reload' },
-    { role: 'forceReload' },
-    { role: 'toggleDevTools' },
-    { type: 'separator' },
+    ...(!isPackaged
+      ? ([{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }] satisfies
+          Electron.MenuItemConstructorOptions[])
+      : []),
     { role: 'resetZoom' },
     { role: 'zoomIn' },
     { role: 'zoomOut' },

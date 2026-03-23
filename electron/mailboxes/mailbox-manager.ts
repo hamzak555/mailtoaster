@@ -29,6 +29,9 @@ interface MailboxUnreadPreview {
   sender: string | null;
   subject: string | null;
   preview: string | null;
+  rowKey: string | null;
+  secondaryRowKey: string | null;
+  actionUrl: string | null;
 }
 
 function hasUnread({ unreadState, unreadCount }: MailboxUnreadSnapshot): boolean {
@@ -140,6 +143,48 @@ function shouldRetainUnreadState(
   parsedUnreadState: MailboxUnreadSnapshot,
 ): boolean {
   return hasUnread(previousUnreadState) && !hasUnread(parsedUnreadState) && isLikelyThreadView(provider, currentUrl);
+}
+
+function getUnreadPreviewDomConfig(provider: MailboxProvider) {
+  return provider === 'gmail'
+    ? {
+        rowSelectors: ['tr.zA.zE', 'tr.zE', 'tr.zA', 'tr[aria-label*="unread"]', 'tr[role="row"]'],
+        senderSelectors: ['.yP', '.yW span[email]', '.yW span', '.yW'],
+        subjectSelectors: ['.bog span', '.bog'],
+        previewSelectors: ['.y2', '.y6 .y2'],
+        linkSelectors: ['a[href*="#"]', 'a[href*="/mail/"]'],
+        keyAttributes: ['data-legacy-message-id', 'data-message-id', 'data-legacy-thread-id', 'data-thread-id'],
+        secondaryKeyAttributes: ['data-legacy-thread-id', 'data-thread-id'],
+      }
+    : {
+        rowSelectors: [
+          'div[role="option"][aria-label*="Unread"]',
+          'div[role="row"][aria-label*="Unread"]',
+          'div[data-isunread="true"]',
+          '[data-convid][aria-label*="Unread"]',
+          'div[role="option"]',
+          'div[role="row"]',
+          '[data-convid]',
+        ],
+        senderSelectors: [
+          '[data-automationid="Sender"]',
+          '[data-automationid="From"]',
+          '[title][data-automationid*="Sender"]',
+        ],
+        subjectSelectors: [
+          '[data-automationid="Subject"]',
+          '[data-automationid="MessageSubject"]',
+          '[title][data-automationid*="Subject"]',
+        ],
+        previewSelectors: [
+          '[data-automationid="SnippetPreview"]',
+          '[data-automationid="PreviewText"]',
+          '[data-automationid*="Preview"]',
+        ],
+        linkSelectors: ['a[href*="/mail/"]', 'a[href*="outlook"]', 'a[href*="office.com"]'],
+        keyAttributes: ['data-itemid', 'data-item-key', 'data-convid'],
+        secondaryKeyAttributes: ['data-convid'],
+      };
 }
 
 export class MailboxManager {
@@ -1003,7 +1048,7 @@ export class MailboxManager {
 
       this.window.show();
       this.window.focus();
-      void this.selectInbox(latestMailbox.id);
+      void this.openNotificationTarget(latestMailbox.id, latestMailbox.provider, preview);
     });
 
     notification.once('close', () => {
@@ -1022,38 +1067,7 @@ export class MailboxManager {
     }
 
     const script = `(() => {
-      const config = ${
-        provider === 'gmail'
-          ? JSON.stringify({
-              rowSelectors: ['tr.zA.zE', 'tr.zE', 'tr[aria-label*="unread"]'],
-              senderSelectors: ['.yP', '.yW span[email]', '.yW span', '.yW'],
-              subjectSelectors: ['.bog span', '.bog'],
-              previewSelectors: ['.y2', '.y6 .y2'],
-            })
-          : JSON.stringify({
-              rowSelectors: [
-                'div[role="option"][aria-label*="Unread"]',
-                'div[role="row"][aria-label*="Unread"]',
-                'div[data-isunread="true"]',
-                '[data-convid][aria-label*="Unread"]',
-              ],
-              senderSelectors: [
-                '[data-automationid="Sender"]',
-                '[data-automationid="From"]',
-                '[title][data-automationid*="Sender"]',
-              ],
-              subjectSelectors: [
-                '[data-automationid="Subject"]',
-                '[data-automationid="MessageSubject"]',
-                '[title][data-automationid*="Subject"]',
-              ],
-              previewSelectors: [
-                '[data-automationid="SnippetPreview"]',
-                '[data-automationid="PreviewText"]',
-                '[data-automationid*="Preview"]',
-              ],
-            })
-      };
+      const config = ${JSON.stringify(getUnreadPreviewDomConfig(provider))};
 
       const cleanText = (value) => {
         if (typeof value !== 'string') {
@@ -1088,18 +1102,63 @@ export class MailboxManager {
         return null;
       };
 
-      const row = config.rowSelectors
-        .map((selector) => document.querySelector(selector))
-        .find((element) => element instanceof HTMLElement);
+      const uniqueRows = [];
+      const seenRows = new Set();
+
+      for (const selector of config.rowSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (!(element instanceof HTMLElement) || seenRows.has(element)) {
+            continue;
+          }
+
+          seenRows.add(element);
+          uniqueRows.push(element);
+        }
+      }
+
+      const row = uniqueRows[0];
 
       if (!(row instanceof HTMLElement)) {
         return null;
       }
 
+      const findAttributeValue = (element, attributes) => {
+        for (const attribute of attributes) {
+          const candidate = cleanText(element.getAttribute(attribute) || '');
+
+          if (candidate) {
+            return candidate;
+          }
+        }
+
+        return null;
+      };
+
+      const findHref = (root, selectors) => {
+        for (const selector of selectors) {
+          const element = root.querySelector(selector);
+
+          if (!(element instanceof HTMLAnchorElement)) {
+            continue;
+          }
+
+          const href = cleanText(element.href || element.getAttribute('href') || '');
+
+          if (href) {
+            return href;
+          }
+        }
+
+        return null;
+      };
+
       return {
         sender: findText(row, config.senderSelectors),
         subject: findText(row, config.subjectSelectors),
         preview: findText(row, config.previewSelectors),
+        rowKey: findAttributeValue(row, config.keyAttributes),
+        secondaryRowKey: findAttributeValue(row, config.secondaryKeyAttributes),
+        actionUrl: findHref(row, config.linkSelectors),
       };
     })();`;
 
@@ -1116,9 +1175,158 @@ export class MailboxManager {
         sender: truncateText(typeof preview.sender === 'string' ? preview.sender : null, 80),
         subject: truncateText(typeof preview.subject === 'string' ? preview.subject : null, 120),
         preview: truncateText(typeof preview.preview === 'string' ? preview.preview : null, 180),
+        rowKey: truncateText(typeof preview.rowKey === 'string' ? preview.rowKey : null, 160),
+        secondaryRowKey: truncateText(typeof preview.secondaryRowKey === 'string' ? preview.secondaryRowKey : null, 160),
+        actionUrl: typeof preview.actionUrl === 'string' ? preview.actionUrl : null,
       };
     } catch {
       return null;
+    }
+  }
+
+  private async openNotificationTarget(
+    mailboxId: string,
+    provider: MailboxProvider,
+    preview: MailboxUnreadPreview | null,
+  ): Promise<void> {
+    await this.selectInbox(mailboxId);
+
+    const view = this.views.get(mailboxId);
+
+    if (preview && view && !view.webContents.isDestroyed()) {
+      const openedViaDom = await this.openNotificationTargetInView(view.webContents, provider, preview);
+
+      if (openedViaDom) {
+        return;
+      }
+    }
+
+    if (preview?.actionUrl && isAllowedMailboxUrl(provider, preview.actionUrl)) {
+      await this.navigateInbox(mailboxId, preview.actionUrl);
+    }
+  }
+
+  private async openNotificationTargetInView(
+    webContents: WebContents,
+    provider: MailboxProvider,
+    preview: MailboxUnreadPreview,
+  ): Promise<boolean> {
+    const script = `((preview) => {
+      const config = ${JSON.stringify(getUnreadPreviewDomConfig(provider))};
+
+      const cleanText = (value) => {
+        if (typeof value !== 'string') {
+          return null;
+        }
+
+        const normalizedValue = value.replace(/\\s+/g, ' ').trim();
+        return normalizedValue.length > 0 ? normalizedValue : null;
+      };
+
+      const getRows = () => {
+        const rows = [];
+        const seenRows = new Set();
+
+        for (const selector of config.rowSelectors) {
+          for (const element of document.querySelectorAll(selector)) {
+            if (!(element instanceof HTMLElement) || seenRows.has(element)) {
+              continue;
+            }
+
+            seenRows.add(element);
+            rows.push(element);
+          }
+        }
+
+        return rows;
+      };
+
+      const findText = (root, selectors) => {
+        for (const selector of selectors) {
+          const element = root.querySelector(selector);
+
+          if (!(element instanceof HTMLElement)) {
+            continue;
+          }
+
+          const candidate = cleanText(
+            element.getAttribute('aria-label') ||
+              element.getAttribute('title') ||
+              element.innerText ||
+              element.textContent ||
+              '',
+          );
+
+          if (candidate) {
+            return candidate;
+          }
+        }
+
+        return null;
+      };
+
+      const findAttributeValue = (element, attributes) => {
+        for (const attribute of attributes) {
+          const candidate = cleanText(element.getAttribute(attribute) || '');
+
+          if (candidate) {
+            return candidate;
+          }
+        }
+
+        return null;
+      };
+
+      const sameValue = (left, right) => Boolean(left) && Boolean(right) && cleanText(left) === cleanText(right);
+      const rowMatches = (row) => {
+        const rowKey = findAttributeValue(row, config.keyAttributes);
+        const secondaryRowKey = findAttributeValue(row, config.secondaryKeyAttributes);
+
+        if (sameValue(preview.rowKey, rowKey) || sameValue(preview.secondaryRowKey, secondaryRowKey)) {
+          return true;
+        }
+
+        const sender = findText(row, config.senderSelectors);
+        const subject = findText(row, config.subjectSelectors);
+        const bodyPreview = findText(row, config.previewSelectors);
+
+        return (
+          (sameValue(preview.subject, subject) && sameValue(preview.sender, sender)) ||
+          (sameValue(preview.subject, subject) && sameValue(preview.preview, bodyPreview)) ||
+          (sameValue(preview.sender, sender) && sameValue(preview.preview, bodyPreview))
+        );
+      };
+
+      const row = getRows().find(rowMatches);
+
+      if (!(row instanceof HTMLElement)) {
+        return false;
+      }
+
+      row.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+      const clickTarget =
+        config.linkSelectors
+          .map((selector) => row.querySelector(selector))
+          .find((element) => element instanceof HTMLElement) ??
+        row;
+
+      if (!(clickTarget instanceof HTMLElement)) {
+        return false;
+      }
+
+      clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      clickTarget.click();
+
+      return true;
+    })(${JSON.stringify(preview)});`;
+
+    try {
+      const result = await webContents.executeJavaScript(script, true);
+      return result === true;
+    } catch {
+      return false;
     }
   }
 }
