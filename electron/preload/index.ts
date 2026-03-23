@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { IPC_CHANNELS, type CreateMailboxInput, type MailToasterApi, type MailToasterState, type MailboxViewport } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  type AppUpdateState,
+  type CreateMailboxInput,
+  type MailToasterApi,
+  type MailToasterState,
+  type MailboxViewport,
+} from '@shared/ipc';
 
 const api: MailToasterApi = {
   getState: () => ipcRenderer.invoke(IPC_CHANNELS.getState) as Promise<MailToasterState>,
@@ -15,6 +22,19 @@ const api: MailToasterApi = {
       ipcRenderer.removeListener(IPC_CHANNELS.stateChanged, wrappedListener);
     };
   },
+  getAppUpdateState: () => ipcRenderer.invoke(IPC_CHANNELS.getAppUpdateState) as Promise<AppUpdateState>,
+  subscribeToAppUpdateState: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, nextState: AppUpdateState): void => {
+      listener(nextState);
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.appUpdateStateChanged, wrappedListener);
+
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.appUpdateStateChanged, wrappedListener);
+    };
+  },
+  installDownloadedUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.installDownloadedUpdate) as Promise<void>,
   createInbox: (input: CreateMailboxInput) => ipcRenderer.invoke(IPC_CHANNELS.createInbox, input) as Promise<void>,
   reorderInboxes: (orderedInboxIds: string[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.reorderInboxes, orderedInboxIds) as Promise<void>,

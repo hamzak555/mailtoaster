@@ -1,11 +1,13 @@
 import { ipcMain } from 'electron';
 
-import { IPC_CHANNELS, type CreateMailboxInput, type MailboxViewport } from '@shared/ipc';
+import { IPC_CHANNELS, type AppUpdateState, type CreateMailboxInput, type MailboxViewport } from '@shared/ipc';
 
 import { MailboxManager } from '../mailboxes/mailbox-manager';
 
 interface ManagerProvider {
   getManager: () => MailboxManager | null;
+  getAppUpdateState: () => AppUpdateState;
+  installDownloadedUpdate: () => Promise<void>;
 }
 
 function resolveManager(provider: ManagerProvider): MailboxManager {
@@ -20,6 +22,8 @@ function resolveManager(provider: ManagerProvider): MailboxManager {
 
 export function registerIpcHandlers(provider: ManagerProvider): void {
   ipcMain.handle(IPC_CHANNELS.getState, () => resolveManager(provider).getState());
+  ipcMain.handle(IPC_CHANNELS.getAppUpdateState, () => provider.getAppUpdateState());
+  ipcMain.handle(IPC_CHANNELS.installDownloadedUpdate, () => provider.installDownloadedUpdate());
   ipcMain.handle(IPC_CHANNELS.createInbox, (_event, input: CreateMailboxInput) => resolveManager(provider).createInbox(input));
   ipcMain.handle(IPC_CHANNELS.reorderInboxes, (_event, orderedInboxIds: string[]) =>
     resolveManager(provider).reorderInboxes(orderedInboxIds),

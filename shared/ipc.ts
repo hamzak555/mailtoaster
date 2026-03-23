@@ -25,9 +25,30 @@ export interface MailboxViewState {
   isLoading: boolean;
 }
 
+export type AppUpdatePhase =
+  | 'idle'
+  | 'unsupported-location'
+  | 'checking'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'error';
+
+export interface AppUpdateState {
+  phase: AppUpdatePhase;
+  currentVersion: string;
+  availableVersion: string | null;
+  progressPercent: number | null;
+  detail: string | null;
+  canInstall: boolean;
+}
+
 export interface MailToasterApi {
   getState: () => Promise<MailToasterState>;
   subscribe: (listener: (state: MailToasterState) => void) => () => void;
+  getAppUpdateState: () => Promise<AppUpdateState>;
+  subscribeToAppUpdateState: (listener: (state: AppUpdateState) => void) => () => void;
+  installDownloadedUpdate: () => Promise<void>;
   createInbox: (input: CreateMailboxInput) => Promise<void>;
   reorderInboxes: (orderedInboxIds: string[]) => Promise<void>;
   setInboxCustomIcon: (id: string, customIconDataUrl: string) => Promise<void>;
@@ -49,6 +70,9 @@ export interface MailToasterApi {
 export const IPC_CHANNELS = {
   getState: 'mail-toaster:get-state',
   stateChanged: 'mail-toaster:state-changed',
+  getAppUpdateState: 'mail-toaster:get-app-update-state',
+  appUpdateStateChanged: 'mail-toaster:app-update-state-changed',
+  installDownloadedUpdate: 'mail-toaster:install-downloaded-update',
   createInbox: 'mail-toaster:create-inbox',
   reorderInboxes: 'mail-toaster:reorder-inboxes',
   setInboxCustomIcon: 'mail-toaster:set-inbox-custom-icon',

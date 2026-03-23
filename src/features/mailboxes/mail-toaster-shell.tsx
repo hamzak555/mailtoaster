@@ -8,10 +8,12 @@ import { getAggregateUnreadCount, hasAggregateUnreadDot } from '@shared/mailboxe
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+import { AppUpdateStatusDialog } from './app-update-status-dialog';
 import { InboxRow } from './inbox-row';
 import { InboxSidebarPanel, type SidebarPanelState } from './inbox-sidebar-panel';
 import { MailboxToolbar } from './mailbox-toolbar';
 import { MailboxAvatar } from './provider-presentation';
+import { useAppUpdateState } from './use-app-update-state';
 import { useMailToaster } from './use-mail-toaster';
 
 const ICON_EXPORT_SIZE = 160;
@@ -96,6 +98,7 @@ async function prepareInboxIconDataUrl(file: File): Promise<string> {
 
 export function MailToasterShell() {
   const { state, selectedInbox, ready, error, actions } = useMailToaster();
+  const { updateState, installDownloadedUpdate } = useAppUpdateState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [panelMode, setPanelMode] = useState<SidebarPanelMode | null>(null);
   const [draggedInboxId, setDraggedInboxId] = useState<string | null>(null);
@@ -312,6 +315,8 @@ export function MailToasterShell() {
             });
         }}
       />
+
+      <AppUpdateStatusDialog state={updateState} onInstall={() => void installDownloadedUpdate()} />
 
       <main className="flex h-screen flex-col gap-3 p-3 pt-0">
         <div className="app-drag h-10 shrink-0" />

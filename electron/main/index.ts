@@ -1,7 +1,10 @@
+import path from 'node:path';
+
 import { app, BrowserWindow, dialog } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater';
 
 import { APP_NAME } from '@shared/mailboxes';
+import { IPC_CHANNELS, type AppUpdateState } from '@shared/ipc';
 
 import { MailboxManager } from '../mailboxes/mailbox-manager';
 import { AppStore } from '../persistence/app-store';
@@ -15,13 +18,75 @@ let mainWindow: BrowserWindow | null = null;
 let mailboxManager: MailboxManager | null = null;
 let rendererServer: RendererServer | null = null;
 let autoUpdateCheckTimer: NodeJS.Timeout | null = null;
-let updatePromptInFlight = false;
 let manualUpdateCheckInFlight = false;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let appUpdateState: AppUpdateState = {
+  phase: 'idle',
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  progressPercent: null,
+  detail: null,
+  canInstall: false,
+};
 
 if (!hasSingleInstanceLock) {
   app.quit();
+}
+
+function isAutoUpdateInstallSupported(): boolean {
+  if (!app.isPackaged || process.platform !== 'darwin') {
+    return true;
+  }
+
+  const executablePath = path.normalize(app.getPath('exe'));
+  return executablePath.includes(`${path.sep}Applications${path.sep}`);
+}
+
+function getUnsupportedAutoUpdateDetail(): string {
+  return 'Automatic updates only install reliably when Mail Toaster is launched from /Applications. Move the app there or reinstall it with the PKG or DMG release.';
+}
+
+function emitAppUpdateState(): void {
+  appUpdateState = {
+    ...appUpdateState,
+    currentVersion: app.getVersion(),
+  };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC_CHANNELS.appUpdateStateChanged, appUpdateState);
+  }
+}
+
+function setAppUpdateState(nextState: Partial<AppUpdateState>): void {
+  appUpdateState = {
+    ...appUpdateState,
+    ...nextState,
+    currentVersion: app.getVersion(),
+  };
+  emitAppUpdateState();
+}
+
+function resetAppUpdateState(): void {
+  setAppUpdateState({
+    phase: 'idle',
+    availableVersion: null,
+    progressPercent: null,
+    detail: null,
+    canInstall: false,
+  });
+}
+
+function getUpdateVersion(info?: UpdateInfo | null): string | null {
+  return info?.version ?? null;
+}
+
+function getDownloadDetail(availableVersion: string | null, progress?: ProgressInfo | null): string {
+  if (progress && Number.isFinite(progress.percent)) {
+    return `Downloading Mail Toaster ${availableVersion ?? ''} (${Math.round(progress.percent)}%).`.trim();
+  }
+
+  return availableVersion ? `Downloading Mail Toaster ${availableVersion}.` : 'Downloading the latest Mail Toaster update.';
 }
 
 async function openAppWindow(): Promise<void> {
@@ -45,6 +110,7 @@ async function openAppWindow(): Promise<void> {
   mainWindow = window;
   mailboxManager = manager;
   manager.initialize();
+  emitAppUpdateState();
 
   window.on('closed', () => {
     manager.dispose();
@@ -59,11 +125,41 @@ async function openAppWindow(): Promise<void> {
   });
 }
 
-async function checkForAppUpdates(): Promise<void> {
+async function checkForAppUpdates({ interactive = false }: { interactive?: boolean } = {}): Promise<void> {
+  if (!isAutoUpdateInstallSupported()) {
+    setAppUpdateState({
+      phase: 'unsupported-location',
+      availableVersion: null,
+      progressPercent: null,
+      detail: getUnsupportedAutoUpdateDetail(),
+      canInstall: false,
+    });
+    return;
+  }
+
   try {
+    setAppUpdateState({
+      phase: 'checking',
+      availableVersion: null,
+      progressPercent: null,
+      detail: 'Checking for updates…',
+      canInstall: false,
+    });
     await autoUpdater.checkForUpdates();
   } catch (error) {
     console.error('Unable to check for Mail Toaster updates.', error);
+
+    if (interactive) {
+      setAppUpdateState({
+        phase: 'error',
+        progressPercent: null,
+        canInstall: false,
+        detail: error instanceof Error ? error.message : 'Unknown updater error.',
+      });
+      return;
+    }
+
+    resetAppUpdateState();
   }
 }
 
@@ -83,6 +179,17 @@ async function manuallyCheckForAppUpdates(): Promise<void> {
       title: 'Updates Unavailable in Development',
       message: 'Automatic updates only work in the packaged Mail Toaster app.',
       detail: 'Build and run the packaged app to test release updates.',
+    });
+    return;
+  }
+
+  if (!isAutoUpdateInstallSupported()) {
+    setAppUpdateState({
+      phase: 'unsupported-location',
+      availableVersion: null,
+      progressPercent: null,
+      detail: getUnsupportedAutoUpdateDetail(),
+      canInstall: false,
     });
     return;
   }
@@ -123,23 +230,17 @@ async function manuallyCheckForAppUpdates(): Promise<void> {
       autoUpdater.once('update-not-available', handleUpdateNotAvailable);
       autoUpdater.once('error', handleError);
 
-      void autoUpdater.checkForUpdates().catch((error) => {
+      void checkForAppUpdates({ interactive: true }).catch((error) => {
         cleanup();
         reject(error);
       });
     });
 
     if (updateStatus === 'available') {
-      await showAppDialog({
-        type: 'info',
-        buttons: ['OK'],
-        title: 'Update Found',
-        message: 'A new version of Mail Toaster is available.',
-        detail: 'It is downloading in the background. You will be prompted to restart once it is ready.',
-      });
       return;
     }
 
+    resetAppUpdateState();
     await showAppDialog({
       type: 'info',
       buttons: ['OK'],
@@ -149,11 +250,10 @@ async function manuallyCheckForAppUpdates(): Promise<void> {
   } catch (error) {
     console.error('Unable to complete manual Mail Toaster update check.', error);
 
-    await showAppDialog({
-      type: 'error',
-      buttons: ['OK'],
-      title: 'Update Check Failed',
-      message: 'Mail Toaster could not check for updates.',
+    setAppUpdateState({
+      phase: 'error',
+      progressPercent: null,
+      canInstall: false,
       detail: error instanceof Error ? error.message : 'Unknown updater error.',
     });
   } finally {
@@ -161,52 +261,112 @@ async function manuallyCheckForAppUpdates(): Promise<void> {
   }
 }
 
+async function installDownloadedUpdate(): Promise<void> {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  if (!isAutoUpdateInstallSupported()) {
+    setAppUpdateState({
+      phase: 'unsupported-location',
+      availableVersion: appUpdateState.availableVersion,
+      progressPercent: null,
+      detail: getUnsupportedAutoUpdateDetail(),
+      canInstall: false,
+    });
+    return;
+  }
+
+  if (appUpdateState.phase !== 'downloaded' || !appUpdateState.canInstall) {
+    return;
+  }
+
+  setAppUpdateState({
+    phase: 'installing',
+    progressPercent: null,
+    detail: `Restarting Mail Toaster to install ${appUpdateState.availableVersion ?? 'the update'}…`,
+    canInstall: false,
+  });
+
+  setImmediate(() => {
+    autoUpdater.quitAndInstall();
+  });
+}
+
 function setupAutoUpdates(): void {
   if (!app.isPackaged || autoUpdateCheckTimer) {
+    return;
+  }
+
+  if (!isAutoUpdateInstallSupported()) {
+    setAppUpdateState({
+      phase: 'unsupported-location',
+      availableVersion: null,
+      progressPercent: null,
+      detail: getUnsupportedAutoUpdateDetail(),
+      canInstall: false,
+    });
     return;
   }
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('error', (error) => {
-    console.error('Mail Toaster auto-update failed.', error);
+  autoUpdater.on('checking-for-update', () => {
+    setAppUpdateState({
+      phase: 'checking',
+      availableVersion: null,
+      progressPercent: null,
+      detail: 'Checking for updates…',
+      canInstall: false,
+    });
   });
 
-  autoUpdater.on('update-downloaded', async () => {
-    if (updatePromptInFlight) {
-      return;
-    }
+  autoUpdater.on('update-available', (info) => {
+    const availableVersion = getUpdateVersion(info);
+    setAppUpdateState({
+      phase: 'downloading',
+      availableVersion,
+      progressPercent: 0,
+      detail: getDownloadDetail(availableVersion),
+      canInstall: false,
+    });
+  });
 
-    updatePromptInFlight = true;
+  autoUpdater.on('download-progress', (progress) => {
+    setAppUpdateState({
+      phase: 'downloading',
+      progressPercent: Math.round(progress.percent),
+      detail: getDownloadDetail(appUpdateState.availableVersion, progress),
+      canInstall: false,
+    });
+  });
 
-    try {
-      const result = mainWindow && !mainWindow.isDestroyed()
-        ? await dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            buttons: ['Restart', 'Later'],
-            defaultId: 0,
-            cancelId: 1,
-            title: 'Mail Toaster Update Ready',
-            message: 'A new version of Mail Toaster has been downloaded.',
-            detail: 'Restart the app to install the update.',
-          })
-        : await dialog.showMessageBox({
-            type: 'info',
-            buttons: ['Restart', 'Later'],
-            defaultId: 0,
-            cancelId: 1,
-            title: 'Mail Toaster Update Ready',
-            message: 'A new version of Mail Toaster has been downloaded.',
-            detail: 'Restart the app to install the update.',
-          });
+  autoUpdater.on('update-not-available', () => {
+    resetAppUpdateState();
+  });
 
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    } finally {
-      updatePromptInFlight = false;
-    }
+  autoUpdater.on('error', (error) => {
+    console.error('Mail Toaster auto-update failed.', error);
+    setAppUpdateState({
+      phase: 'error',
+      progressPercent: null,
+      canInstall: false,
+      detail: error instanceof Error ? error.message : 'Unknown updater error.',
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const availableVersion = getUpdateVersion(info);
+    setAppUpdateState({
+      phase: 'downloaded',
+      availableVersion,
+      progressPercent: 100,
+      detail: isAutoUpdateInstallSupported()
+        ? `Mail Toaster ${availableVersion ?? ''} is ready to install. Restart the app to finish the update.`.trim()
+        : getUnsupportedAutoUpdateDetail(),
+      canInstall: isAutoUpdateInstallSupported(),
+    });
   });
 
   void checkForAppUpdates();
@@ -219,6 +379,8 @@ if (hasSingleInstanceLock) {
   app.setName(APP_NAME);
   registerIpcHandlers({
     getManager: () => mailboxManager,
+    getAppUpdateState: () => appUpdateState,
+    installDownloadedUpdate,
   });
 
   app.on('second-instance', async () => {
