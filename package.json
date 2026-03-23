@@ -51,8 +51,7 @@
       "icon": "build/icon.icns",
       "target": [
         "dmg",
-        "zip",
-        "pkg"
+        "zip"
       ]
     }
   },

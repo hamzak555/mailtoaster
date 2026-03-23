@@ -50,13 +50,12 @@ Temporary workaround:
 
 You can also go to `System Settings > Privacy & Security` and use `Open Anyway` after the first launch attempt.
 
-For normal public distribution, the proper fix is Developer ID signing plus Apple notarization in CI.
+Without Developer ID signing and Apple notarization, this warning will continue to appear on other Macs. There is no packaging-only workaround for that.
 
 ## Release Assets
 - `Mail-Toaster-<version>-arm64.dmg`: the file most users should download for first install.
 - `Mail-Toaster-<version>-arm64.zip`: required for macOS auto-update delivery.
 - `latest-mac.yml`: required metadata for the updater.
-- `Mail-Toaster-<version>-arm64.pkg`: optional installer variant. Safe to remove from future releases if you only want to ship the DMG.
 
 The GitHub auto-generated `Source code (zip)` asset is not the same as the app ZIP used by Electron auto-updates.
 
