@@ -1,17 +1,32 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { MailboxRecord, PersistedAppState, PersistedWindowBounds } from '@shared/mailboxes';
+import type {
+  MailboxRecord,
+  PersistedAppState,
+  PersistedMailboxNotificationState,
+  PersistedWindowBounds,
+} from '@shared/mailboxes';
 
 const STORE_FILE_NAME = 'mail-toaster-state.json';
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 
 const DEFAULT_STATE: PersistedAppState = {
   version: STORE_VERSION,
   inboxes: [],
   selectedInboxId: null,
   windowBounds: null,
+  mailboxNotificationState: {},
 };
+
+function isPersistedMailboxNotificationState(value: unknown): value is PersistedMailboxNotificationState {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<PersistedMailboxNotificationState>;
+  return candidate.lastUnreadNotificationSignature === null || typeof candidate.lastUnreadNotificationSignature === 'string';
+}
 
 function isMailboxRecord(value: unknown): value is MailboxRecord {
   if (!value || typeof value !== 'object') {
@@ -67,6 +82,15 @@ function sanitizeState(value: unknown): PersistedAppState {
                 : 920,
           }
         : null,
+    mailboxNotificationState:
+      candidate.mailboxNotificationState && typeof candidate.mailboxNotificationState === 'object'
+        ? Object.fromEntries(
+            Object.entries(candidate.mailboxNotificationState).filter(
+              ([mailboxId, notificationState]) =>
+                typeof mailboxId === 'string' && isPersistedMailboxNotificationState(notificationState),
+            ),
+          )
+        : {},
   };
 }
 
@@ -83,11 +107,23 @@ export class AppStore {
     return structuredClone(this.state);
   }
 
-  saveMailboxState(inboxes: MailboxRecord[], selectedInboxId: string | null): void {
+  saveMailboxState(
+    inboxes: MailboxRecord[],
+    selectedInboxId: string | null,
+    mailboxNotificationState: Record<string, PersistedMailboxNotificationState>,
+  ): void {
+    const activeInboxIds = new Set(inboxes.map((inbox) => inbox.id));
+
     this.state = {
       ...this.state,
       inboxes: structuredClone(inboxes),
       selectedInboxId,
+      mailboxNotificationState: Object.fromEntries(
+        Object.entries(mailboxNotificationState).filter(
+          ([mailboxId, notificationState]) =>
+            activeInboxIds.has(mailboxId) && isPersistedMailboxNotificationState(notificationState),
+        ),
+      ),
     };
     this.write();
   }

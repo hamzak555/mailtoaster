@@ -6,6 +6,7 @@ import {
   getProviderLabel,
   compareMailboxes,
   hasAggregateUnreadDot,
+  type PersistedMailboxNotificationState,
   type MailboxUnreadState,
   type MailboxProvider,
   type MailboxRecord,
@@ -109,6 +110,33 @@ function getUnreadNotificationBodyWithPreview(
   return bodyWithPreview || getUnreadNotificationBody(previous, next);
 }
 
+function getUnreadNotificationSignature(
+  next: MailboxUnreadSnapshot,
+  preview: MailboxUnreadPreview | null,
+): string {
+  const normalizedParts = [
+    preview?.actionUrl,
+    preview?.rowKey,
+    preview?.secondaryRowKey,
+    preview?.sender,
+    preview?.subject,
+    preview?.preview,
+    next.unreadState,
+    next.unreadCount === null ? null : String(next.unreadCount),
+  ]
+    .map((value) => {
+      if (typeof value !== 'string') {
+        return null;
+      }
+
+      const normalizedValue = value.replace(/\s+/g, ' ').trim();
+      return normalizedValue.length > 0 ? normalizedValue : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return normalizedParts.length > 0 ? normalizedParts.join('||') : `${next.unreadState}:${next.unreadCount ?? ''}`;
+}
+
 function isLikelyThreadView(provider: MailboxProvider, candidateUrl: string): boolean {
   try {
     const { hash, pathname } = new URL(candidateUrl);
@@ -194,6 +222,7 @@ export class MailboxManager {
   private readonly avatarSourceUrls = new Map<string, string>();
   private readonly activeNotifications = new Set<ElectronNotification>();
   private readonly primedUnreadInboxIds = new Set<string>();
+  private readonly unreadNotificationStateByInboxId: Map<string, PersistedMailboxNotificationState>;
   private inboxes: MailboxRecord[];
   private selectedInboxId: string | null;
   private attachedInboxId: string | null = null;
@@ -207,6 +236,9 @@ export class MailboxManager {
 
     this.inboxes = [...state.inboxes].sort(compareMailboxes);
     this.selectedInboxId = this.resolveSelectedInbox(state.selectedInboxId);
+    this.unreadNotificationStateByInboxId = new Map(
+      Object.entries(state.mailboxNotificationState).map(([mailboxId, notificationState]) => [mailboxId, { ...notificationState }]),
+    );
 
     for (const inbox of this.inboxes) {
       this.viewStates.set(inbox.id, {
@@ -579,7 +611,7 @@ export class MailboxManager {
   }
 
   private persistState(): void {
-    this.store.saveMailboxState(this.inboxes, this.selectedInboxId);
+    this.store.saveMailboxState(this.inboxes, this.selectedInboxId, this.getPersistedNotificationState());
   }
 
   private emitState(): void {
@@ -824,8 +856,7 @@ export class MailboxManager {
 
     const shouldNotify =
       isUnreadPrimed &&
-      shouldNotifyForUnreadChange(previousUnreadState, nextUnreadState) &&
-      !this.shouldSuppressUnreadNotification(mailboxId);
+      shouldNotifyForUnreadChange(previousUnreadState, nextUnreadState);
 
     this.updateInbox(mailboxId, (currentMailbox) => ({
       ...currentMailbox,
@@ -834,11 +865,15 @@ export class MailboxManager {
       updatedAt: new Date().toISOString(),
     }));
 
+    if (!hasUnread(nextUnreadState)) {
+      this.setLastUnreadNotificationSignature(mailboxId, null);
+    }
+
     this.persistState();
     this.emitState();
 
     if (shouldNotify) {
-      void this.showUnreadNotification(mailbox, previousUnreadState, nextUnreadState);
+      void this.handleUnreadArrival(mailbox, previousUnreadState, nextUnreadState);
     }
   }
 
@@ -1002,15 +1037,33 @@ export class MailboxManager {
     return this.window.isFocused() && this.selectedInboxId === mailboxId;
   }
 
-  private async showUnreadNotification(
+  private getPersistedNotificationState(): Record<string, PersistedMailboxNotificationState> {
+    return Object.fromEntries(
+      this.inboxes
+        .map((mailbox) => {
+          const notificationState = this.unreadNotificationStateByInboxId.get(mailbox.id);
+          return notificationState ? [mailbox.id, { ...notificationState }] : null;
+        })
+        .filter((entry): entry is [string, PersistedMailboxNotificationState] => Boolean(entry)),
+    );
+  }
+
+  private setLastUnreadNotificationSignature(mailboxId: string, signature: string | null): void {
+    if (signature) {
+      this.unreadNotificationStateByInboxId.set(mailboxId, {
+        lastUnreadNotificationSignature: signature,
+      });
+      return;
+    }
+
+    this.unreadNotificationStateByInboxId.delete(mailboxId);
+  }
+
+  private async handleUnreadArrival(
     mailbox: MailboxRecord,
     previousUnreadState: MailboxUnreadSnapshot,
     nextUnreadState: MailboxUnreadSnapshot,
   ): Promise<void> {
-    if (!ElectronNotification.isSupported()) {
-      return;
-    }
-
     const currentMailbox = this.findInbox(mailbox.id);
 
     if (!currentMailbox) {
@@ -1021,6 +1074,21 @@ export class MailboxManager {
     const latestMailbox = this.findInbox(currentMailbox.id);
 
     if (!latestMailbox) {
+      return;
+    }
+
+    const notificationSignature = getUnreadNotificationSignature(nextUnreadState, preview);
+    const previousNotificationSignature =
+      this.unreadNotificationStateByInboxId.get(latestMailbox.id)?.lastUnreadNotificationSignature ?? null;
+
+    if (previousNotificationSignature === notificationSignature) {
+      return;
+    }
+
+    this.setLastUnreadNotificationSignature(latestMailbox.id, notificationSignature);
+    this.persistState();
+
+    if (this.shouldSuppressUnreadNotification(latestMailbox.id) || !ElectronNotification.isSupported()) {
       return;
     }
 

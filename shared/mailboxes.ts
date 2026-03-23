@@ -28,11 +28,16 @@ export interface PersistedWindowBounds {
   height: number;
 }
 
+export interface PersistedMailboxNotificationState {
+  lastUnreadNotificationSignature: string | null;
+}
+
 export interface PersistedAppState {
   version: number;
   inboxes: MailboxRecord[];
   selectedInboxId: string | null;
   windowBounds: PersistedWindowBounds | null;
+  mailboxNotificationState: Record<string, PersistedMailboxNotificationState>;
 }
 
 export function compareMailboxes(left: MailboxRecord, right: MailboxRecord): number {

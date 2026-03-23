@@ -1,10 +1,12 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, LoaderCircle, MoonStar, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus } from 'lucide-react';
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { getAggregateUnreadCount, hasAggregateUnreadDot } from '@shared/mailboxes';
+import type { AppUpdateState } from '@shared/ipc';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +53,40 @@ function reorderInboxIds(inboxIds: string[], sourceId: string, targetId: string,
 
 function inboxOrderMatches(left: string[], right: string[]) {
   return left.join('|') === right.join('|');
+}
+
+function getSidebarUpdateIndicator(state: AppUpdateState | null) {
+  if (!state) {
+    return null;
+  }
+
+  switch (state.phase) {
+    case 'downloading':
+      return {
+        kind: 'progress' as const,
+        label:
+          typeof state.progressPercent === 'number'
+            ? `Updating ${Math.max(0, Math.round(state.progressPercent))}%`
+            : 'Downloading update',
+        title: state.availableVersion ? `Downloading Mail Toaster ${state.availableVersion}` : 'Downloading Mail Toaster update',
+      };
+    case 'downloaded':
+      return {
+        kind: state.canInstall ? ('install' as const) : ('progress' as const),
+        label: state.availableVersion ? `Update ${state.availableVersion}` : 'Update ready',
+        title: state.canInstall
+          ? `Install Mail Toaster ${state.availableVersion ?? ''}`.trim()
+          : state.detail ?? 'Update downloaded',
+      };
+    case 'installing':
+      return {
+        kind: 'progress' as const,
+        label: state.availableVersion ? `Installing ${state.availableVersion}` : 'Installing update',
+        title: state.detail ?? 'Installing Mail Toaster update',
+      };
+    default:
+      return null;
+  }
 }
 
 async function prepareInboxIconDataUrl(file: File): Promise<string> {
@@ -139,6 +175,7 @@ export function MailToasterShell() {
         ? 'Unread'
         : `${state.inboxes.length} inbox${state.inboxes.length === 1 ? '' : 'es'}`;
   const selectedViewState = selectedInbox ? state.viewStates[selectedInbox.id] : undefined;
+  const sidebarUpdateIndicator = useMemo(() => getSidebarUpdateIndicator(updateState), [updateState]);
 
   const sidebarPanel: SidebarPanelState | null =
     panelMode?.type === 'add'
@@ -500,21 +537,52 @@ export function MailToasterShell() {
               </div>
 
               <div className={cn('border-t border-border/30 p-3', sidebarCollapsed && 'px-2.5 py-2.5')}>
-                <div className={cn('flex', sidebarCollapsed ? 'justify-center' : 'justify-start')}>
-                  <Button
-                    className="h-10 w-10 rounded-md px-0"
-                    size="icon"
-                    type="button"
-                    title="Add inbox"
-                    onClick={() => {
-                      setSidebarCollapsed(false);
-                      setPanelMode({ type: 'add' });
-                      setSidebarNotice(null);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span className="sr-only">Add inbox</span>
-                  </Button>
+                <div className={cn('flex items-center gap-2', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
+                  <div className="relative">
+                    <Button
+                      className="h-10 w-10 rounded-md px-0"
+                      size="icon"
+                      type="button"
+                      title="Add inbox"
+                      onClick={() => {
+                        setSidebarCollapsed(false);
+                        setPanelMode({ type: 'add' });
+                        setSidebarNotice(null);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span className="sr-only">Add inbox</span>
+                    </Button>
+
+                    {sidebarCollapsed && sidebarUpdateIndicator ? (
+                      <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-primary ring-2 ring-card" aria-hidden="true" />
+                    ) : null}
+                  </div>
+
+                  {!sidebarCollapsed && sidebarUpdateIndicator ? (
+                    sidebarUpdateIndicator.kind === 'install' ? (
+                      <Button
+                        className="h-10 max-w-[172px] rounded-full border-primary/30 bg-primary/10 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary hover:bg-primary/14"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        title={sidebarUpdateIndicator.title}
+                        onClick={() => void installDownloadedUpdate()}
+                      >
+                        <Download className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{sidebarUpdateIndicator.label}</span>
+                      </Button>
+                    ) : (
+                      <Badge
+                        className="h-10 max-w-[172px] gap-2 rounded-full bg-primary/10 px-3 text-[10px] tracking-[0.12em] text-primary"
+                        title={sidebarUpdateIndicator.title}
+                        variant="muted"
+                      >
+                        <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                        <span className="truncate">{sidebarUpdateIndicator.label}</span>
+                      </Badge>
+                    )
+                  ) : null}
                 </div>
               </div>
             </aside>
