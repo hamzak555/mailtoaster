@@ -25,18 +25,40 @@ npm run build
 npm run pack:mac
 ```
 
-Create signed DMG/ZIP artifacts:
+Create distributable release artifacts:
 
 ```bash
 npm run dist:mac
 ```
 
-## Install On macOS
-1. Build the packaged app with `npm run pack:mac` or the distributable DMG/ZIP with `npm run dist:mac`.
-2. Open [release/Mail-Toaster-0.1.0-arm64.dmg](release/Mail-Toaster-0.1.0-arm64.dmg) or copy [release/mac-arm64/Mail Toaster.app](release/mac-arm64/Mail%20Toaster.app) into `/Applications`.
-3. Launch `Mail Toaster.app` from `/Applications` or Launchpad.
+## Install From GitHub Releases
+1. Open the [latest release](https://github.com/hamzak555/mailtoaster/releases/latest).
+2. Download the macOS DMG asset named `Mail-Toaster-<version>-arm64.dmg`.
+3. Open the DMG and drag `Mail Toaster.app` into the `Applications` folder.
+4. Launch `Mail Toaster.app` from `/Applications` or Launchpad.
+5. Keep the app in `/Applications` if you want in-app auto-updates to install correctly.
 
 The packaged app does not need `npm run dev` or a Next.js server. The built app serves its local renderer internally.
+
+## If macOS Blocks The App
+If macOS shows `Apple could not verify "Mail Toaster" is free of malware`, the release has not been notarized yet.
+
+Temporary workaround:
+1. Move the app into `/Applications`.
+2. Control-click `Mail Toaster.app` and choose `Open`.
+3. Click `Open` again in the system prompt.
+
+You can also go to `System Settings > Privacy & Security` and use `Open Anyway` after the first launch attempt.
+
+For normal public distribution, the proper fix is Developer ID signing plus Apple notarization in CI.
+
+## Release Assets
+- `Mail-Toaster-<version>-arm64.dmg`: the file most users should download for first install.
+- `Mail-Toaster-<version>-arm64.zip`: required for macOS auto-update delivery.
+- `latest-mac.yml`: required metadata for the updater.
+- `Mail-Toaster-<version>-arm64.pkg`: optional installer variant. Safe to remove from future releases if you only want to ship the DMG.
+
+The GitHub auto-generated `Source code (zip)` asset is not the same as the app ZIP used by Electron auto-updates.
 
 ## Environment Variables
 - None required.
