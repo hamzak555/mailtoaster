@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus, TriangleAlert } from 'lucide-react';
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { getAggregateUnreadCount, hasAggregateUnreadDot } from '@shared/mailboxes';
@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-import { AppUpdateStatusDialog } from './app-update-status-dialog';
 import { InboxRow } from './inbox-row';
 import { InboxSidebarPanel, type SidebarPanelState } from './inbox-sidebar-panel';
 import { MailboxToolbar } from './mailbox-toolbar';
@@ -83,6 +82,47 @@ function getSidebarUpdateIndicator(state: AppUpdateState | null) {
         kind: 'progress' as const,
         label: state.availableVersion ? `Installing ${state.availableVersion}` : 'Installing update',
         title: state.detail ?? 'Installing Mail Toaster update',
+      };
+    default:
+      return null;
+  }
+}
+
+function getSidebarUpdatePanel(state: AppUpdateState | null) {
+  if (!state) {
+    return null;
+  }
+
+  switch (state.phase) {
+    case 'downloaded':
+      return {
+        tone: state.canInstall ? ('primary' as const) : ('warning' as const),
+        title: state.availableVersion ? `Update ${state.availableVersion} ready` : 'Update ready',
+        detail:
+          state.detail ??
+          (state.canInstall ? 'Restart Mail Toaster to finish installing the downloaded update.' : 'The update has finished downloading.'),
+        canInstall: state.canInstall,
+      };
+    case 'installing':
+      return {
+        tone: 'primary' as const,
+        title: state.availableVersion ? `Installing ${state.availableVersion}` : 'Installing update',
+        detail: state.detail ?? 'Mail Toaster is restarting to finish the update.',
+        canInstall: false,
+      };
+    case 'error':
+      return {
+        tone: 'danger' as const,
+        title: 'Update problem',
+        detail: state.detail ?? 'Mail Toaster could not complete the update.',
+        canInstall: false,
+      };
+    case 'unsupported-location':
+      return {
+        tone: 'danger' as const,
+        title: 'Move app to Applications',
+        detail: state.detail ?? 'Automatic updates only install reliably from /Applications.',
+        canInstall: false,
       };
     default:
       return null;
@@ -176,6 +216,7 @@ export function MailToasterShell() {
         : `${state.inboxes.length} inbox${state.inboxes.length === 1 ? '' : 'es'}`;
   const selectedViewState = selectedInbox ? state.viewStates[selectedInbox.id] : undefined;
   const sidebarUpdateIndicator = useMemo(() => getSidebarUpdateIndicator(updateState), [updateState]);
+  const sidebarUpdatePanel = useMemo(() => getSidebarUpdatePanel(updateState), [updateState]);
 
   const sidebarPanel: SidebarPanelState | null =
     panelMode?.type === 'add'
@@ -352,8 +393,6 @@ export function MailToasterShell() {
             });
         }}
       />
-
-      <AppUpdateStatusDialog state={updateState} onInstall={() => void installDownloadedUpdate()} />
 
       <main className="flex h-screen flex-col gap-3 p-3 pt-0">
         <div className="app-drag h-10 shrink-0" />
@@ -537,6 +576,49 @@ export function MailToasterShell() {
               </div>
 
               <div className={cn('border-t border-border/30 p-3', sidebarCollapsed && 'px-2.5 py-2.5')}>
+                {!sidebarCollapsed && sidebarUpdatePanel ? (
+                  <div
+                    className={cn(
+                      'mb-3 rounded-[1rem] border px-3 py-3',
+                      sidebarUpdatePanel.tone === 'danger'
+                        ? 'border-danger/30 bg-danger/6'
+                        : 'border-primary/20 bg-primary/6',
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div
+                        className={cn(
+                          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                          sidebarUpdatePanel.tone === 'danger' ? 'bg-danger/12 text-danger' : 'bg-primary/12 text-primary',
+                        )}
+                      >
+                        {sidebarUpdatePanel.tone === 'danger' ? (
+                          <TriangleAlert className="h-4 w-4" />
+                        ) : sidebarUpdatePanel.canInstall ? (
+                          <Download className="h-4 w-4" />
+                        ) : (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="text-sm font-semibold tracking-tight">{sidebarUpdatePanel.title}</p>
+                        <p className="text-xs leading-5 text-muted-foreground">{sidebarUpdatePanel.detail}</p>
+                        {sidebarUpdatePanel.canInstall ? (
+                          <Button
+                            className="mt-2 h-9 rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                            size="sm"
+                            type="button"
+                            onClick={() => void installDownloadedUpdate()}
+                          >
+                            Restart and Install
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className={cn('flex items-center gap-2', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
                   <div className="relative">
                     <Button
