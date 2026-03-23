@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "es2022"
+    ],
+    "types": [
+      "node",
+      "electron"
+    ]
+  },
+  "include": [
+    "./**/*.ts",
+    "../shared/**/*.ts",
+    "../tsup.config.ts"
+  ]
+}

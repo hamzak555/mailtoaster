@@ -1,0 +1,91 @@
+{
+  "name": "mail-toaster",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal multi-inbox desktop shell for Gmail and Outlook",
+  "productName": "Mail Toaster",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hamzak555/mailtoaster.git"
+  },
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n renderer,electron-build,electron-run \"npm:dev:renderer\" \"npm:dev:electron:build\" \"npm:dev:electron:run\"",
+    "dev:renderer": "next dev -p 3001 --hostname 127.0.0.1",
+    "dev:electron:build": "tsup --config tsup.config.ts --watch",
+    "dev:electron:run": "wait-on http://127.0.0.1:3001 file:dist-electron/main/index.js && cross-env MAIL_TOASTER_RENDERER_URL=http://127.0.0.1:3001 nodemon --watch dist-electron --ext js --exec electron .",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "next build",
+    "build:electron": "tsup --config tsup.config.ts",
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "icon:mac": "node scripts/generate-mac-icon.mjs",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "pack:mac": "npm run build && electron-builder --mac dir",
+    "release:mac": "npm run build && electron-builder --mac --publish always"
+  },
+  "build": {
+    "appId": "com.mailtoaster.app",
+    "productName": "Mail Toaster",
+    "artifactName": "Mail-Toaster-${version}-${arch}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hamzak555",
+        "repo": "mailtoaster",
+        "releaseType": "draft"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip",
+        "pkg"
+      ]
+    }
+  },
+  "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron-updater": "^6.8.3",
+    "lucide-react": "^1.0.1",
+    "next": "^16.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.5.0"
+  },
+  "author": "Hamza Khalid",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.27",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
+    "nodemon": "^3.1.14",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.17",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.4"
+  }
+}

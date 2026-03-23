@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 32 56% 96%;
+  --foreground: 25 28% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 25 28% 16%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 25 28% 16%;
+  --primary: 27 83% 40%;
+  --primary-foreground: 34 100% 98%;
+  --secondary: 32 42% 92%;
+  --secondary-foreground: 25 24% 22%;
+  --muted: 28 34% 90%;
+  --muted-foreground: 28 12% 42%;
+  --accent: 29 78% 90%;
+  --accent-foreground: 25 28% 16%;
+  --border: 29 27% 82%;
+  --input: 30 29% 88%;
+  --ring: 27 83% 40%;
+  --success: 142 58% 34%;
+  --danger: 3 74% 52%;
+  --radius: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 24 20% 10%;
+    --foreground: 34 40% 95%;
+    --card: 25 18% 14%;
+    --card-foreground: 34 40% 95%;
+    --popover: 24 18% 12%;
+    --popover-foreground: 34 40% 95%;
+    --primary: 29 88% 62%;
+    --primary-foreground: 26 38% 10%;
+    --secondary: 24 14% 18%;
+    --secondary-foreground: 34 38% 92%;
+    --muted: 24 12% 18%;
+    --muted-foreground: 30 14% 68%;
+    --accent: 27 24% 18%;
+    --accent-foreground: 34 40% 95%;
+    --border: 24 10% 24%;
+    --input: 24 12% 20%;
+    --ring: 29 88% 62%;
+    --success: 142 54% 44%;
+    --danger: 5 82% 64%;
+  }
+}
+
+* {
+  @apply border-border;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-background font-sans text-foreground antialiased;
+  background-image:
+    radial-gradient(circle at top left, rgba(255, 203, 132, 0.28), transparent 24rem),
+    radial-gradient(circle at bottom right, rgba(124, 79, 36, 0.18), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 247, 239, 0.92), rgba(244, 235, 226, 0.96));
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-image:
+      radial-gradient(circle at top left, rgba(213, 142, 74, 0.18), transparent 22rem),
+      radial-gradient(circle at bottom right, rgba(68, 40, 18, 0.22), transparent 28rem),
+      linear-gradient(180deg, rgba(25, 18, 14, 0.94), rgba(18, 14, 12, 0.98));
+  }
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: hsl(var(--accent));
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

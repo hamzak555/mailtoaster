@@ -1,0 +1,120 @@
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+import type { MailboxRecord, PersistedAppState, PersistedWindowBounds } from '@shared/mailboxes';
+
+const STORE_FILE_NAME = 'mail-toaster-state.json';
+const STORE_VERSION = 1;
+
+const DEFAULT_STATE: PersistedAppState = {
+  version: STORE_VERSION,
+  inboxes: [],
+  selectedInboxId: null,
+  windowBounds: null,
+};
+
+function isMailboxRecord(value: unknown): value is MailboxRecord {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const mailbox = value as Partial<MailboxRecord>;
+
+  return (
+    typeof mailbox.id === 'string' &&
+    (mailbox.provider === 'gmail' || mailbox.provider === 'outlook') &&
+    typeof mailbox.displayName === 'string' &&
+    typeof mailbox.targetUrl === 'string' &&
+    (mailbox.accountAvatarDataUrl === null ||
+      mailbox.accountAvatarDataUrl === undefined ||
+      typeof mailbox.accountAvatarDataUrl === 'string') &&
+    (mailbox.customIconDataUrl === null ||
+      mailbox.customIconDataUrl === undefined ||
+      typeof mailbox.customIconDataUrl === 'string') &&
+    typeof mailbox.partition === 'string' &&
+    (mailbox.sleepState === 'awake' || mailbox.sleepState === 'sleeping') &&
+    (mailbox.unreadState === 'none' || mailbox.unreadState === 'dot' || mailbox.unreadState === 'count') &&
+    (mailbox.unreadCount === null || typeof mailbox.unreadCount === 'number') &&
+    typeof mailbox.sortOrder === 'number' &&
+    typeof mailbox.createdAt === 'string' &&
+    typeof mailbox.updatedAt === 'string'
+  );
+}
+
+function sanitizeState(value: unknown): PersistedAppState {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_STATE };
+  }
+
+  const candidate = value as Partial<PersistedAppState>;
+
+  return {
+    version: STORE_VERSION,
+    inboxes: Array.isArray(candidate.inboxes) ? candidate.inboxes.filter(isMailboxRecord) : [],
+    selectedInboxId: typeof candidate.selectedInboxId === 'string' ? candidate.selectedInboxId : null,
+    windowBounds:
+      candidate.windowBounds && typeof candidate.windowBounds === 'object'
+        ? {
+            x: typeof candidate.windowBounds.x === 'number' ? candidate.windowBounds.x : undefined,
+            y: typeof candidate.windowBounds.y === 'number' ? candidate.windowBounds.y : undefined,
+            width:
+              typeof candidate.windowBounds.width === 'number' && candidate.windowBounds.width > 0
+                ? candidate.windowBounds.width
+                : 1440,
+            height:
+              typeof candidate.windowBounds.height === 'number' && candidate.windowBounds.height > 0
+                ? candidate.windowBounds.height
+                : 920,
+          }
+        : null,
+  };
+}
+
+export class AppStore {
+  private readonly filePath: string;
+  private state: PersistedAppState;
+
+  constructor(userDataPath: string) {
+    this.filePath = join(userDataPath, STORE_FILE_NAME);
+    this.state = this.load();
+  }
+
+  getState(): PersistedAppState {
+    return structuredClone(this.state);
+  }
+
+  saveMailboxState(inboxes: MailboxRecord[], selectedInboxId: string | null): void {
+    this.state = {
+      ...this.state,
+      inboxes: structuredClone(inboxes),
+      selectedInboxId,
+    };
+    this.write();
+  }
+
+  saveWindowBounds(bounds: PersistedWindowBounds): void {
+    this.state = {
+      ...this.state,
+      windowBounds: bounds,
+    };
+    this.write();
+  }
+
+  private load(): PersistedAppState {
+    try {
+      const file = readFileSync(this.filePath, 'utf8');
+      return sanitizeState(JSON.parse(file));
+    } catch {
+      return { ...DEFAULT_STATE };
+    }
+  }
+
+  private write(): void {
+    mkdirSync(dirname(this.filePath), { recursive: true });
+
+    const tempPath = `${this.filePath}.tmp`;
+    writeFileSync(tempPath, JSON.stringify(this.state, null, 2), 'utf8');
+    renameSync(tempPath, this.filePath);
+    rmSync(tempPath, { force: true });
+  }
+}
