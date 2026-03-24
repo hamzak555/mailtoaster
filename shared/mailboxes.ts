@@ -2,7 +2,8 @@ import type { AppAppearanceSettings } from './appearance';
 
 export const APP_NAME = 'Mail Toaster';
 
-export type MailboxProvider = 'gmail' | 'outlook';
+export const MAILBOX_PROVIDERS = ['gmail', 'outlook', 'protonmail'] as const;
+export type MailboxProvider = (typeof MAILBOX_PROVIDERS)[number];
 export type MailboxSleepState = 'awake' | 'sleeping';
 export type MailboxSleepMode = 'manual' | 'inactivity';
 export type MailboxUnreadState = 'none' | 'dot' | 'count';
@@ -52,6 +53,10 @@ export function isMailboxAutoSleepMinutes(value: unknown): value is MailboxAutoS
   return typeof value === 'number' && AUTO_SLEEP_MINUTES_OPTIONS.some((minutes) => minutes === value);
 }
 
+export function isMailboxProvider(value: unknown): value is MailboxProvider {
+  return typeof value === 'string' && MAILBOX_PROVIDERS.some((provider) => provider === value);
+}
+
 export function formatAutoSleepLabel(minutes: number): string {
   if (minutes % 60 === 0) {
     const hours = minutes / 60;
@@ -70,7 +75,14 @@ export function compareMailboxes(left: MailboxRecord, right: MailboxRecord): num
 }
 
 export function getProviderLabel(provider: MailboxProvider): string {
-  return provider === 'gmail' ? 'Gmail' : 'Outlook';
+  switch (provider) {
+    case 'gmail':
+      return 'Gmail';
+    case 'outlook':
+      return 'Outlook';
+    case 'protonmail':
+      return 'Protonmail';
+  }
 }
 
 export function getDefaultDisplayName(provider: MailboxProvider, existingCount: number): string {

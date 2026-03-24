@@ -6,6 +6,7 @@ import { AUTO_SLEEP_MINUTES_OPTIONS, formatAutoSleepLabel, type MailboxRecord } 
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 interface InboxSleepDialogProps {
@@ -64,12 +65,10 @@ export function InboxSleepDialog({
           <button
             className={cn(
               'group w-full rounded-[1.1rem] border p-4 text-left transition hover:border-primary/40 hover:bg-accent/35',
-              inbox.sleepState === 'sleeping' && inbox.sleepMode === 'manual'
-                ? 'border-primary bg-accent/50 shadow-soft'
-                : 'border-border/55 bg-card/72',
+              inbox.sleepState === 'sleeping' ? 'border-primary bg-accent/50 shadow-soft' : 'border-border/55 bg-card/72',
             )}
             type="button"
-            onClick={onSleepUntilWoken}
+            onClick={inbox.sleepState === 'sleeping' ? onWake : onSleepUntilWoken}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
@@ -77,14 +76,17 @@ export function InboxSleepDialog({
                   <MoonStar className="h-4 w-4 text-primary" />
                   Sleep Until Woken
                 </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {inbox.sleepState === 'sleeping'
+                    ? 'Checked on. Turn it off to wake this inbox.'
+                    : 'Turn it on to keep this inbox asleep until you switch it off.'}
+                </p>
               </div>
 
               <div
                 className={cn(
                   'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border',
-                  inbox.sleepState === 'sleeping' && inbox.sleepMode === 'manual'
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border/60 text-transparent',
+                  inbox.sleepState === 'sleeping' ? 'border-primary bg-primary text-primary-foreground' : 'border-border/60 text-transparent',
                 )}
               >
                 <Check className="h-3.5 w-3.5" />
@@ -98,63 +100,24 @@ export function InboxSleepDialog({
               Auto-Sleep
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                className={cn(
-                  'group rounded-[1.1rem] border p-3 text-left transition hover:border-primary/40 hover:bg-accent/35',
-                  inbox.sleepMode === 'manual' && inbox.sleepState !== 'sleeping'
-                    ? 'border-primary bg-accent/50 shadow-soft'
-                    : 'border-border/55 bg-card/72',
-                )}
-                type="button"
-                onClick={() => onSetAutoSleep(null)}
+            <div className="rounded-[1.1rem] border border-border/55 bg-card/72 p-3">
+              <Select
+                value={inbox.sleepMode === 'inactivity' && inbox.sleepAfterMinutes ? String(inbox.sleepAfterMinutes) : 'off'}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  onSetAutoSleep(nextValue === 'off' ? null : Number(nextValue));
+                }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="text-sm font-semibold tracking-tight">No Auto-Sleep</div>
-                  </div>
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border',
-                      inbox.sleepMode === 'manual' && inbox.sleepState !== 'sleeping'
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border/60 text-transparent',
-                    )}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </div>
-                </div>
-              </button>
-
-              {AUTO_SLEEP_MINUTES_OPTIONS.map((minutes) => {
-                const selected = inbox.sleepMode === 'inactivity' && inbox.sleepAfterMinutes === minutes;
-
-                return (
-                  <button
-                    key={minutes}
-                    className={cn(
-                      'group rounded-[1.1rem] border p-3 text-left transition hover:border-primary/40 hover:bg-accent/35',
-                      selected ? 'border-primary bg-accent/50 shadow-soft' : 'border-border/55 bg-card/72',
-                    )}
-                    type="button"
-                    onClick={() => onSetAutoSleep(minutes)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-semibold tracking-tight">After {formatAutoSleepLabel(minutes)}</div>
-                      </div>
-                      <div
-                        className={cn(
-                          'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border',
-                          selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border/60 text-transparent',
-                        )}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+                <option value="off">No Auto-Sleep</option>
+                {AUTO_SLEEP_MINUTES_OPTIONS.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    After {formatAutoSleepLabel(minutes)}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Choose when this inbox should sleep automatically after inactivity.
+              </p>
             </div>
           </div>
         </div>

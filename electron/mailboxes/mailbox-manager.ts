@@ -23,6 +23,7 @@ import { parseUnreadFromTitle } from './unread';
 
 const MAILBOX_VIEW_BORDER_RADIUS = 16;
 const MINUTE_IN_MS = 60_000;
+const UNREAD_NOTIFICATION_RESET_GRACE_PERIOD_MS = 10_000;
 
 interface MailboxUnreadSnapshot {
   unreadState: MailboxUnreadState;
@@ -144,24 +145,28 @@ function isLikelyThreadView(provider: MailboxProvider, candidateUrl: string): bo
   try {
     const { hash, pathname } = new URL(candidateUrl);
 
-    if (provider === 'gmail') {
-      const hashSegments = hash
-        .replace(/^#/, '')
-        .split('/')
-        .filter(Boolean);
+    switch (provider) {
+      case 'gmail': {
+        const hashSegments = hash
+          .replace(/^#/, '')
+          .split('/')
+          .filter(Boolean);
 
-      if (hashSegments.length <= 1) {
-        return false;
+        if (hashSegments.length <= 1) {
+          return false;
+        }
+
+        if (hashSegments[0] === 'label' || hashSegments[0] === 'category') {
+          return hashSegments.length > 2;
+        }
+
+        return !['search', 'settings', 'advanced-search'].includes(hashSegments[0] ?? '');
       }
-
-      if (hashSegments[0] === 'label' || hashSegments[0] === 'category') {
-        return hashSegments.length > 2;
-      }
-
-      return !['search', 'settings', 'advanced-search'].includes(hashSegments[0] ?? '');
+      case 'outlook':
+        return pathname.includes('/mail/id/') || pathname.includes('/mail/deeplink/read/');
+      case 'protonmail':
+        return pathname.split('/').filter(Boolean).length > 3;
     }
-
-    return pathname.includes('/mail/id/') || pathname.includes('/mail/deeplink/read/');
   } catch {
     return false;
   }
@@ -177,8 +182,9 @@ function shouldRetainUnreadState(
 }
 
 function getUnreadPreviewDomConfig(provider: MailboxProvider) {
-  return provider === 'gmail'
-    ? {
+  switch (provider) {
+    case 'gmail':
+      return {
         rowSelectors: ['tr.zA.zE', 'tr.zE', 'tr.zA', 'tr[aria-label*="unread"]', 'tr[role="row"]'],
         senderSelectors: ['.yP', '.yW span[email]', '.yW span', '.yW'],
         subjectSelectors: ['.bog span', '.bog'],
@@ -186,8 +192,9 @@ function getUnreadPreviewDomConfig(provider: MailboxProvider) {
         linkSelectors: ['a[href*="#"]', 'a[href*="/mail/"]'],
         keyAttributes: ['data-legacy-message-id', 'data-message-id', 'data-legacy-thread-id', 'data-thread-id'],
         secondaryKeyAttributes: ['data-legacy-thread-id', 'data-thread-id'],
-      }
-    : {
+      };
+    case 'outlook':
+      return {
         rowSelectors: [
           'div[role="option"][aria-label*="Unread"]',
           'div[role="row"][aria-label*="Unread"]',
@@ -216,6 +223,24 @@ function getUnreadPreviewDomConfig(provider: MailboxProvider) {
         keyAttributes: ['data-itemid', 'data-item-key', 'data-convid'],
         secondaryKeyAttributes: ['data-convid'],
       };
+    case 'protonmail':
+      return {
+        rowSelectors: [
+          '[data-testid*="message-row"]',
+          '[data-testid*="conversation-row"]',
+          '[aria-label*="Unread"]',
+          '[aria-label*="unread"]',
+          '[role="row"]',
+          '[data-element-id]',
+        ],
+        senderSelectors: ['[data-testid*="sender"]', '[data-testid*="participant"]', '[title]', '[aria-label]'],
+        subjectSelectors: ['[data-testid*="subject"]', '[data-testid*="conversation"]', '[title]'],
+        previewSelectors: ['[data-testid*="summary"]', '[data-testid*="snippet"]', '[data-testid*="preview"]'],
+        linkSelectors: ['a[href*="/u/"]', 'a[href*="proton.me"]'],
+        keyAttributes: ['data-testid', 'data-element-id', 'data-message-id'],
+        secondaryKeyAttributes: ['data-element-id', 'data-message-id'],
+      };
+  }
 }
 
 export class MailboxManager {
@@ -225,6 +250,7 @@ export class MailboxManager {
   private readonly avatarSourceUrls = new Map<string, string>();
   private readonly activeNotifications = new Set<ElectronNotification>();
   private readonly autoSleepTimeouts = new Map<string, NodeJS.Timeout>();
+  private readonly unreadNotificationResetTimeouts = new Map<string, NodeJS.Timeout>();
   private readonly primedUnreadInboxIds = new Set<string>();
   private readonly unreadNotificationStateByInboxId: Map<string, PersistedMailboxNotificationState>;
   private inboxes: MailboxRecord[];
@@ -246,6 +272,7 @@ export class MailboxManager {
     this.unreadNotificationStateByInboxId = new Map(
       Object.entries(state.mailboxNotificationState).map(([mailboxId, notificationState]) => [mailboxId, { ...notificationState }]),
     );
+    this.clearStaleUnreadNotificationState();
 
     for (const inbox of this.inboxes) {
       this.viewStates.set(inbox.id, {
@@ -281,6 +308,10 @@ export class MailboxManager {
 
     for (const mailboxId of [...this.autoSleepTimeouts.keys()]) {
       this.clearAutoSleepTimer(mailboxId);
+    }
+
+    for (const mailboxId of [...this.unreadNotificationResetTimeouts.keys()]) {
+      this.clearUnreadNotificationResetTimeout(mailboxId);
     }
 
     for (const inboxId of [...this.views.keys()]) {
@@ -756,6 +787,14 @@ export class MailboxManager {
     app.dock.setBadge(badgeText);
   }
 
+  private clearStaleUnreadNotificationState(): void {
+    for (const mailbox of this.inboxes) {
+      if (!hasUnread(mailbox)) {
+        this.unreadNotificationStateByInboxId.delete(mailbox.id);
+      }
+    }
+  }
+
   private attachSelectedView(): void {
     if (this.nativeOverlayVisible) {
       this.detachCurrentView();
@@ -1000,8 +1039,10 @@ export class MailboxManager {
         updatedAt: new Date().toISOString(),
       }));
 
-      if (!hasUnread(nextUnreadState)) {
-        this.setLastUnreadNotificationSignature(mailboxId, null);
+      if (hasUnread(nextUnreadState)) {
+        this.clearUnreadNotificationResetTimeout(mailboxId);
+      } else {
+        this.scheduleUnreadNotificationReset(mailboxId);
       }
 
       this.persistState();
@@ -1105,13 +1146,20 @@ export class MailboxManager {
               'a[href*="SignOutOptions"] img',
               'img[src*="googleusercontent"]',
             ])
-          : JSON.stringify([
-              'button[aria-label*="Account manager"] img',
-              'button[aria-label*="account manager"] img',
-              'button[aria-label*="Profile"] img',
-              'img[src*="GetPersonaPhoto"]',
-              'img[src*="office.com"]',
-            ])
+          : provider === 'outlook'
+            ? JSON.stringify([
+                'button[aria-label*="Account manager"] img',
+                'button[aria-label*="account manager"] img',
+                'button[aria-label*="Profile"] img',
+                'img[src*="GetPersonaPhoto"]',
+                'img[src*="office.com"]',
+              ])
+            : JSON.stringify([
+                'button[aria-label*="Account"] img',
+                'button[aria-label*="account"] img',
+                'button[aria-label*="Profile"] img',
+                'img[src*="proton"]',
+              ])
       };
       for (const selector of selectors) {
         const element = document.querySelector(selector);
@@ -1125,7 +1173,14 @@ export class MailboxManager {
       const fallback = Array.from(document.images).find((image) => {
         const src = image.currentSrc || image.src || '';
         const alt = (image.alt || '').toLowerCase();
-        return src.includes('googleusercontent') || src.includes('GetPersonaPhoto') || src.includes('substrate.office') || alt.includes('account') || alt.includes('profile');
+        return (
+          src.includes('googleusercontent') ||
+          src.includes('GetPersonaPhoto') ||
+          src.includes('substrate.office') ||
+          src.includes('proton') ||
+          alt.includes('account') ||
+          alt.includes('profile')
+        );
       });
       return fallback ? (fallback.currentSrc || fallback.src || null) : null;
     })();`;
@@ -1162,6 +1217,7 @@ export class MailboxManager {
 
     this.views.delete(mailboxId);
     this.primedUnreadInboxIds.delete(mailboxId);
+    this.clearUnreadNotificationResetTimeout(mailboxId);
     view.webContents.removeAllListeners();
 
     if (!view.webContents.isDestroyed()) {
@@ -1193,6 +1249,40 @@ export class MailboxManager {
     }
 
     this.unreadNotificationStateByInboxId.delete(mailboxId);
+  }
+
+  private clearUnreadNotificationResetTimeout(mailboxId: string): void {
+    const timeout = this.unreadNotificationResetTimeouts.get(mailboxId);
+
+    if (!timeout) {
+      return;
+    }
+
+    clearTimeout(timeout);
+    this.unreadNotificationResetTimeouts.delete(mailboxId);
+  }
+
+  private scheduleUnreadNotificationReset(mailboxId: string): void {
+    this.clearUnreadNotificationResetTimeout(mailboxId);
+
+    const timeout = setTimeout(() => {
+      this.unreadNotificationResetTimeouts.delete(mailboxId);
+
+      const mailbox = this.findInbox(mailboxId);
+
+      if (!mailbox || hasUnread(mailbox)) {
+        return;
+      }
+
+      this.setLastUnreadNotificationSignature(mailboxId, null);
+      this.persistState();
+    }, UNREAD_NOTIFICATION_RESET_GRACE_PERIOD_MS);
+
+    if (typeof timeout.unref === 'function') {
+      timeout.unref();
+    }
+
+    this.unreadNotificationResetTimeouts.set(mailboxId, timeout);
   }
 
   private async handleUnreadArrival(

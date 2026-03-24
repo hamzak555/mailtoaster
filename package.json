@@ -1,8 +1,8 @@
 {
   "name": "mail-toaster",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
-  "description": "Minimal multi-inbox desktop shell for Gmail and Outlook",
+  "description": "Minimal multi-inbox desktop shell for Gmail, Outlook, and Protonmail",
   "productName": "Mail Toaster",
   "repository": {
     "type": "git",

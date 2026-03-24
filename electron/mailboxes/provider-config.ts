@@ -43,6 +43,11 @@ const PROVIDER_CONFIG: Record<MailboxProvider, ProviderConfig> = {
       'sharepoint.com',
     ],
   },
+  protonmail: {
+    defaultTargetUrl: 'https://mail.proton.me/u/0/inbox',
+    allowedHosts: ['mail.proton.me', 'account.proton.me', 'proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
+    allowedAvatarHosts: ['mail.proton.me', 'account.proton.me', 'proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
+  },
 };
 
 function isAllowedHost(hostname: string, allowedHosts: string[]): boolean {

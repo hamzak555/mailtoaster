@@ -8,7 +8,7 @@ import type {
   PersistedMailboxNotificationState,
   PersistedWindowBounds,
 } from '@shared/mailboxes';
-import { isMailboxAutoSleepMinutes } from '@shared/mailboxes';
+import { isMailboxAutoSleepMinutes, isMailboxProvider } from '@shared/mailboxes';
 
 const STORE_FILE_NAME = 'mail-toaster-state.json';
 const STORE_VERSION = 4;
@@ -52,7 +52,7 @@ function isMailboxRecord(value: unknown): value is MailboxRecord {
 
   return (
     typeof mailbox.id === 'string' &&
-    (mailbox.provider === 'gmail' || mailbox.provider === 'outlook') &&
+    isMailboxProvider(mailbox.provider) &&
     typeof mailbox.displayName === 'string' &&
     typeof mailbox.targetUrl === 'string' &&
     (mailbox.accountAvatarDataUrl === null ||

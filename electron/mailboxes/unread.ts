@@ -27,5 +27,9 @@ export function parseUnreadFromTitle(provider: MailboxProvider, title: string): 
     return { unreadState: 'dot', unreadCount: null };
   }
 
+  if (provider === 'protonmail' && (/^[*•]/.test(title) || /\bunread\b/i.test(title))) {
+    return { unreadState: 'dot', unreadCount: null };
+  }
+
   return { unreadState: 'none', unreadCount: null };
 }

@@ -1,11 +1,19 @@
-import type { MailboxProvider } from '@shared/mailboxes';
+import { getProviderLabel, type MailboxProvider } from '@shared/mailboxes';
 
 import { GmailIcon } from '@/components/icons/gmail-icon';
 import { OutlookIcon } from '@/components/icons/outlook-icon';
+import { ProtonmailIcon } from '@/components/icons/protonmail-icon';
 import { cn } from '@/lib/utils';
 
 export function ProviderIcon({ provider, className }: { provider: MailboxProvider; className?: string }) {
-  return provider === 'gmail' ? <GmailIcon className={className} /> : <OutlookIcon className={className} />;
+  switch (provider) {
+    case 'gmail':
+      return <GmailIcon className={className} />;
+    case 'outlook':
+      return <OutlookIcon className={className} />;
+    case 'protonmail':
+      return <ProtonmailIcon className={className} />;
+  }
 }
 
 export function MailboxAvatar({
@@ -61,7 +69,7 @@ export function ProviderPill({
       )}
     >
       <MailboxAvatar provider={provider} className={cn('shrink-0', compact ? 'h-11 w-11' : 'h-10 w-10')} />
-      {compact ? <span className="sr-only">{provider === 'gmail' ? 'Gmail' : 'Outlook'}</span> : <span className="text-sm font-medium">{provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
+      {compact ? <span className="sr-only">{getProviderLabel(provider)}</span> : <span className="text-sm font-medium">{getProviderLabel(provider)}</span>}
     </div>
   );
 }

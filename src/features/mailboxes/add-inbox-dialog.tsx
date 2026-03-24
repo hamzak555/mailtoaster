@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
-import type { MailboxProvider } from '@shared/mailboxes';
+import { getProviderLabel, MAILBOX_PROVIDERS, type MailboxProvider } from '@shared/mailboxes';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-
-import { ProviderPill } from './provider-presentation';
+import { Select } from '@/components/ui/select';
 
 interface AddInboxDialogProps {
   open: boolean;
@@ -58,21 +57,21 @@ export function AddInboxDialog({ open, onOpenChange, onCreate }: AddInboxDialogP
         </DialogHeader>
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              className="w-full rounded-2xl text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-              type="button"
-              onClick={() => setProvider('gmail')}
+          <div className="space-y-2">
+            <label className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground" htmlFor="provider">
+              Provider
+            </label>
+            <Select
+              id="provider"
+              value={provider}
+              onChange={(event) => setProvider(event.target.value as MailboxProvider)}
             >
-              <ProviderPill provider="gmail" active={provider === 'gmail'} />
-            </button>
-            <button
-              className="w-full rounded-2xl text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-              type="button"
-              onClick={() => setProvider('outlook')}
-            >
-              <ProviderPill provider="outlook" active={provider === 'outlook'} />
-            </button>
+              {MAILBOX_PROVIDERS.map((providerOption) => (
+                <option key={providerOption} value={providerOption}>
+                  {getProviderLabel(providerOption)}
+                </option>
+              ))}
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -83,7 +82,7 @@ export function AddInboxDialog({ open, onOpenChange, onCreate }: AddInboxDialogP
               id="displayName"
               autoFocus
               autoComplete="off"
-              placeholder={provider === 'gmail' ? 'Gmail' : 'Outlook'}
+              placeholder={getProviderLabel(provider)}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />

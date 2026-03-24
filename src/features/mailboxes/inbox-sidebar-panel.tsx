@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 
-import type { MailboxProvider, MailboxRecord } from '@shared/mailboxes';
+import { getProviderLabel, MAILBOX_PROVIDERS, type MailboxProvider, type MailboxRecord } from '@shared/mailboxes';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-
-import { ProviderPill } from './provider-presentation';
+import { Select } from '@/components/ui/select';
 
 export type SidebarPanelState =
   | { type: 'add' }
@@ -113,30 +112,28 @@ export function InboxSidebarPanel({ panel, onClose, onCreate, onRename, onRemove
       ) : (
         <form className="mt-3 space-y-3" onSubmit={handleSubmit}>
           {panel.type === 'add' ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                aria-pressed={provider === 'gmail'}
-                className="h-20 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                type="button"
-                onClick={() => setProvider('gmail')}
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground" htmlFor="provider">
+                Provider
+              </label>
+              <Select
+                id="provider"
+                value={provider}
+                onChange={(event) => setProvider(event.target.value as MailboxProvider)}
               >
-                <ProviderPill provider="gmail" active={provider === 'gmail'} compact className="h-full" />
-              </button>
-              <button
-                aria-pressed={provider === 'outlook'}
-                className="h-20 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                type="button"
-                onClick={() => setProvider('outlook')}
-              >
-                <ProviderPill provider="outlook" active={provider === 'outlook'} compact className="h-full" />
-              </button>
+                {MAILBOX_PROVIDERS.map((providerOption) => (
+                  <option key={providerOption} value={providerOption}>
+                    {getProviderLabel(providerOption)}
+                  </option>
+                ))}
+              </Select>
             </div>
           ) : null}
 
           <Input
             autoFocus
             autoComplete="off"
-            placeholder={panel.type === 'add' ? (provider === 'gmail' ? 'Gmail' : 'Outlook') : 'Inbox name'}
+            placeholder={panel.type === 'add' ? getProviderLabel(provider) : 'Inbox name'}
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
           />

@@ -438,7 +438,7 @@ export function MailToasterShell() {
         }}
         onSleepUntilWoken={() => {
           if (sleepDialogTarget) {
-            void actions.setInboxAutoSleep(sleepDialogTarget.id, null).then(() => actions.sleepInbox(sleepDialogTarget.id));
+            void actions.sleepInbox(sleepDialogTarget.id);
           }
         }}
         onWake={() => {
@@ -459,35 +459,19 @@ export function MailToasterShell() {
                 sidebarCollapsed ? 'w-[92px]' : 'w-[312px]',
               )}
             >
-              <div className={cn('border-b border-border/30 p-3', sidebarCollapsed && 'px-2.5')}>
-                <div className={cn('flex items-center gap-3', sidebarCollapsed ? 'justify-center' : 'justify-start')}>
-                  <div className={cn('flex min-w-0 items-center gap-3', sidebarCollapsed && 'justify-center')}>
-                    <img src="/logo.jpg" alt="Mail Toaster" width={42} height={42} className="rounded-[0.8rem] object-cover" draggable={false} />
-                    {!sidebarCollapsed ? (
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-semibold tracking-tight">Mail Toaster</div>
-                        <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                          {unreadSummaryText}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+              {!sidebarCollapsed && (sidebarPanel || sidebarNotice) ? (
+                <div className="border-b border-border/30 p-3">
+                  <InboxSidebarPanel
+                    panel={sidebarPanel}
+                    onClose={() => setPanelMode(null)}
+                    onCreate={actions.createInbox}
+                    onRemove={actions.removeInbox}
+                    onRename={actions.renameInbox}
+                  />
+
+                  {sidebarNotice ? <p className={cn(sidebarPanel ? 'mt-3' : '', 'text-sm text-danger')}>{sidebarNotice}</p> : null}
                 </div>
-
-                {!sidebarCollapsed && (sidebarPanel || sidebarNotice) ? (
-                  <div className="mt-3">
-                    <InboxSidebarPanel
-                      panel={sidebarPanel}
-                      onClose={() => setPanelMode(null)}
-                      onCreate={actions.createInbox}
-                      onRemove={actions.removeInbox}
-                      onRename={actions.renameInbox}
-                    />
-
-                    {sidebarNotice ? <p className={cn(sidebarPanel ? 'mt-3' : '', 'text-sm text-danger')}>{sidebarNotice}</p> : null}
-                  </div>
-                ) : null}
-              </div>
+              ) : null}
 
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
                 {state.inboxes.length === 0 ? (
@@ -698,17 +682,19 @@ export function MailToasterShell() {
                   ) : null}
 
                   <div className="flex items-center gap-2">
-                    <Button
-                      className="h-10 w-10 rounded-md px-0"
-                      size="icon"
-                      type="button"
-                      title="Open appearance settings"
-                      variant="outline"
-                      onClick={() => setSettingsOpen(true)}
-                    >
-                      <Settings2 className="h-4 w-4" />
-                      <span className="sr-only">Open appearance settings</span>
-                    </Button>
+                    {!sidebarCollapsed ? (
+                      <Button
+                        className="h-10 w-10 rounded-md px-0"
+                        size="icon"
+                        type="button"
+                        title="Open appearance settings"
+                        variant="outline"
+                        onClick={() => setSettingsOpen(true)}
+                      >
+                        <Settings2 className="h-4 w-4" />
+                        <span className="sr-only">Open appearance settings</span>
+                      </Button>
+                    ) : null}
 
                     <div className="relative">
                       <Button
@@ -730,6 +716,12 @@ export function MailToasterShell() {
                         <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-primary ring-2 ring-card" aria-hidden="true" />
                       ) : null}
                     </div>
+
+                    {!sidebarCollapsed ? (
+                      <div className="flex h-10 items-center rounded-md border border-border/30 bg-background/70 px-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                        {unreadSummaryText}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
