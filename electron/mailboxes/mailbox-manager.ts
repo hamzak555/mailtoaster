@@ -3,6 +3,7 @@ import { app, BrowserWindow, Notification as ElectronNotification, type Rectangl
 import { DEFAULT_APP_APPEARANCE_SETTINGS, isAppAccentThemeId, type AppAppearanceSettings, type AppAccentThemeId } from '@shared/appearance';
 import {
   getAggregateUnreadCount,
+  isMailboxAutoSleepMinutes,
   getDefaultDisplayName,
   getProviderLabel,
   compareMailboxes,
@@ -21,6 +22,7 @@ import { getDefaultTargetUrl, isAllowedAvatarAssetUrl, isAllowedMailboxUrl } fro
 import { parseUnreadFromTitle } from './unread';
 
 const MAILBOX_VIEW_BORDER_RADIUS = 16;
+const MINUTE_IN_MS = 60_000;
 
 interface MailboxUnreadSnapshot {
   unreadState: MailboxUnreadState;
@@ -222,6 +224,7 @@ export class MailboxManager {
   private readonly viewStates = new Map<string, MailboxViewState>();
   private readonly avatarSourceUrls = new Map<string, string>();
   private readonly activeNotifications = new Set<ElectronNotification>();
+  private readonly autoSleepTimeouts = new Map<string, NodeJS.Timeout>();
   private readonly primedUnreadInboxIds = new Set<string>();
   private readonly unreadNotificationStateByInboxId: Map<string, PersistedMailboxNotificationState>;
   private inboxes: MailboxRecord[];
@@ -265,6 +268,8 @@ export class MailboxManager {
       if (inbox.sleepState === 'awake' && inbox.id !== selectedInbox?.id) {
         this.ensureView(inbox.id);
       }
+
+      this.syncAutoSleepTimer(inbox.id);
     }
 
     this.persistState();
@@ -273,6 +278,10 @@ export class MailboxManager {
 
   dispose(): void {
     this.detachCurrentView();
+
+    for (const mailboxId of [...this.autoSleepTimeouts.keys()]) {
+      this.clearAutoSleepTimer(mailboxId);
+    }
 
     for (const inboxId of [...this.views.keys()]) {
       this.destroyView(inboxId);
@@ -329,6 +338,8 @@ export class MailboxManager {
       customIconDataUrl: null,
       partition: `persist:inbox-${id}`,
       sleepState: 'awake',
+      sleepMode: 'manual',
+      sleepAfterMinutes: null,
       unreadCount: null,
       unreadState: 'none',
       sortOrder,
@@ -438,6 +449,7 @@ export class MailboxManager {
     }
 
     const remainingInboxes = this.inboxes.filter((inbox) => inbox.id !== id);
+    this.clearAutoSleepTimer(id);
     this.destroyView(id);
     this.avatarSourceUrls.delete(id);
     this.viewStates.delete(id);
@@ -466,10 +478,13 @@ export class MailboxManager {
 
     this.selectedInboxId = id;
 
-    if (mailbox.sleepState === 'awake') {
-      this.ensureView(id);
+    if (mailbox.sleepState === 'sleeping') {
+      await this.wakeInbox(id);
+      return;
     }
 
+    this.ensureView(id);
+    this.recordMailboxActivity(id);
     this.persistState();
     this.attachSelectedView();
     this.emitState();
@@ -488,9 +503,39 @@ export class MailboxManager {
       updatedAt: new Date().toISOString(),
     }));
 
+    this.clearAutoSleepTimer(id);
     this.destroyView(id);
     this.persistState();
     this.attachSelectedView();
+    this.emitState();
+  }
+
+  async setInboxAutoSleep(id: string, minutes: number | null): Promise<void> {
+    const mailbox = this.findInbox(id);
+
+    if (!mailbox) {
+      return;
+    }
+
+    if (minutes !== null && !isMailboxAutoSleepMinutes(minutes)) {
+      throw new Error('Unsupported auto-sleep duration.');
+    }
+
+    const nextSleepMode = minutes === null ? 'manual' : 'inactivity';
+
+    if (mailbox.sleepMode === nextSleepMode && mailbox.sleepAfterMinutes === minutes) {
+      return;
+    }
+
+    this.updateInbox(id, (currentMailbox) => ({
+      ...currentMailbox,
+      sleepMode: nextSleepMode,
+      sleepAfterMinutes: minutes,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    this.syncAutoSleepTimer(id);
+    this.persistState();
     this.emitState();
   }
 
@@ -508,6 +553,7 @@ export class MailboxManager {
     }));
 
     this.ensureView(id);
+    this.recordMailboxActivity(id);
     this.persistState();
     this.attachSelectedView();
     this.emitState();
@@ -525,6 +571,7 @@ export class MailboxManager {
     const view = this.getActiveView(id);
 
     if (view?.webContents.canGoBack()) {
+      this.recordMailboxActivity(id);
       view.webContents.goBack();
     }
   }
@@ -533,6 +580,7 @@ export class MailboxManager {
     const view = this.getActiveView(id);
 
     if (view?.webContents.canGoForward()) {
+      this.recordMailboxActivity(id);
       view.webContents.goForward();
     }
   }
@@ -552,6 +600,7 @@ export class MailboxManager {
     const view = this.getActiveView(id);
 
     if (view) {
+      this.recordMailboxActivity(id);
       view.webContents.reload();
     }
   }
@@ -582,6 +631,8 @@ export class MailboxManager {
     if (!view) {
       return;
     }
+
+    this.recordMailboxActivity(id);
 
     this.syncViewState(id, {
       canGoBack: view.webContents.canGoBack(),
@@ -636,6 +687,41 @@ export class MailboxManager {
     this.inboxes = this.inboxes
       .map((mailbox) => (mailbox.id === id ? updater(mailbox) : mailbox))
       .sort(compareMailboxes);
+  }
+
+  private clearAutoSleepTimer(mailboxId: string): void {
+    const timeout = this.autoSleepTimeouts.get(mailboxId);
+
+    if (!timeout) {
+      return;
+    }
+
+    clearTimeout(timeout);
+    this.autoSleepTimeouts.delete(mailboxId);
+  }
+
+  private syncAutoSleepTimer(mailboxId: string): void {
+    this.clearAutoSleepTimer(mailboxId);
+
+    const mailbox = this.findInbox(mailboxId);
+
+    if (!mailbox || mailbox.sleepState === 'sleeping' || mailbox.sleepMode !== 'inactivity' || !mailbox.sleepAfterMinutes) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void this.sleepInbox(mailboxId);
+    }, mailbox.sleepAfterMinutes * MINUTE_IN_MS);
+
+    if (typeof timeout.unref === 'function') {
+      timeout.unref();
+    }
+
+    this.autoSleepTimeouts.set(mailboxId, timeout);
+  }
+
+  private recordMailboxActivity(mailboxId: string): void {
+    this.syncAutoSleepTimer(mailboxId);
   }
 
   private persistState(): void {
@@ -796,15 +882,18 @@ export class MailboxManager {
 
     webContents.on('did-stop-loading', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.applyUnreadState(mailboxId, provider, webContents.getTitle());
       void this.syncAccountAvatar(mailboxId, provider, webContents);
     });
 
     webContents.on('did-navigate', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.recordMailboxActivity(mailboxId);
     });
 
     webContents.on('did-navigate-in-page', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.recordMailboxActivity(mailboxId);
     });
 
     webContents.on('did-fail-load', () => {
@@ -813,6 +902,7 @@ export class MailboxManager {
 
     webContents.on('did-finish-load', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.applyUnreadState(mailboxId, provider, webContents.getTitle());
       void this.syncAccountAvatar(mailboxId, provider, webContents);
       setTimeout(() => {
         void this.syncAccountAvatar(mailboxId, provider, webContents);
@@ -866,7 +956,7 @@ export class MailboxManager {
   private applyUnreadState(mailboxId: string, provider: MailboxProvider, title: string): void {
     const mailbox = this.findInbox(mailboxId);
 
-    if (!mailbox) {
+    if (!mailbox || !title) {
       return;
     }
 
@@ -885,30 +975,38 @@ export class MailboxManager {
       this.primedUnreadInboxIds.add(mailboxId);
     }
 
-    if (
+    const unreadStateUnchanged =
       previousUnreadState.unreadState === nextUnreadState.unreadState &&
-      previousUnreadState.unreadCount === nextUnreadState.unreadCount
-    ) {
+      previousUnreadState.unreadCount === nextUnreadState.unreadCount;
+    const shouldProbeStableUnread =
+      isUnreadPrimed &&
+      unreadStateUnchanged &&
+      hasUnread(nextUnreadState) &&
+      (previousUnreadState.unreadState === 'dot' || nextUnreadState.unreadState === 'dot');
+
+    if (unreadStateUnchanged && !shouldProbeStableUnread) {
       return;
     }
 
     const shouldNotify =
       isUnreadPrimed &&
-      shouldNotifyForUnreadChange(previousUnreadState, nextUnreadState);
+      (shouldNotifyForUnreadChange(previousUnreadState, nextUnreadState) || shouldProbeStableUnread);
 
-    this.updateInbox(mailboxId, (currentMailbox) => ({
-      ...currentMailbox,
-      unreadState: nextUnreadState.unreadState,
-      unreadCount: nextUnreadState.unreadCount,
-      updatedAt: new Date().toISOString(),
-    }));
+    if (!unreadStateUnchanged) {
+      this.updateInbox(mailboxId, (currentMailbox) => ({
+        ...currentMailbox,
+        unreadState: nextUnreadState.unreadState,
+        unreadCount: nextUnreadState.unreadCount,
+        updatedAt: new Date().toISOString(),
+      }));
 
-    if (!hasUnread(nextUnreadState)) {
-      this.setLastUnreadNotificationSignature(mailboxId, null);
+      if (!hasUnread(nextUnreadState)) {
+        this.setLastUnreadNotificationSignature(mailboxId, null);
+      }
+
+      this.persistState();
+      this.emitState();
     }
-
-    this.persistState();
-    this.emitState();
 
     if (shouldNotify) {
       void this.handleUnreadArrival(mailbox, previousUnreadState, nextUnreadState);

@@ -51,6 +51,8 @@ const api: MailToasterApi = {
   removeInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.removeInbox, id) as Promise<void>,
   selectInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.selectInbox, id) as Promise<void>,
   sleepInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.sleepInbox, id) as Promise<void>,
+  setInboxAutoSleep: (id: string, minutes: number | null) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setInboxAutoSleep, id, minutes) as Promise<void>,
   wakeInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.wakeInbox, id) as Promise<void>,
   openInboxExternal: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.openInboxExternal, id) as Promise<void>,
   goBackInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.goBackInbox, id) as Promise<void>,

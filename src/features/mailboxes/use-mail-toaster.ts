@@ -105,6 +105,9 @@ export function useMailToaster() {
       sleepInbox: async (id: string) => {
         await getApi().sleepInbox(id);
       },
+      setInboxAutoSleep: async (id: string, minutes: number | null) => {
+        await getApi().setInboxAutoSleep(id, minutes);
+      },
       wakeInbox: async (id: string) => {
         await getApi().wakeInbox(id);
       },

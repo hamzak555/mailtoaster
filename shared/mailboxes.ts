@@ -4,7 +4,10 @@ export const APP_NAME = 'Mail Toaster';
 
 export type MailboxProvider = 'gmail' | 'outlook';
 export type MailboxSleepState = 'awake' | 'sleeping';
+export type MailboxSleepMode = 'manual' | 'inactivity';
 export type MailboxUnreadState = 'none' | 'dot' | 'count';
+export const AUTO_SLEEP_MINUTES_OPTIONS = [15, 30, 60, 120] as const;
+export type MailboxAutoSleepMinutes = (typeof AUTO_SLEEP_MINUTES_OPTIONS)[number];
 
 export interface MailboxRecord {
   id: string;
@@ -16,6 +19,8 @@ export interface MailboxRecord {
   customIconDataUrl: string | null;
   partition: string;
   sleepState: MailboxSleepState;
+  sleepMode: MailboxSleepMode;
+  sleepAfterMinutes: MailboxAutoSleepMinutes | null;
   unreadCount: number | null;
   unreadState: MailboxUnreadState;
   sortOrder: number;
@@ -41,6 +46,19 @@ export interface PersistedAppState {
   windowBounds: PersistedWindowBounds | null;
   mailboxNotificationState: Record<string, PersistedMailboxNotificationState>;
   appearanceSettings: AppAppearanceSettings;
+}
+
+export function isMailboxAutoSleepMinutes(value: unknown): value is MailboxAutoSleepMinutes {
+  return typeof value === 'number' && AUTO_SLEEP_MINUTES_OPTIONS.some((minutes) => minutes === value);
+}
+
+export function formatAutoSleepLabel(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return hours === 1 ? '1 hour' : `${hours} hours`;
+  }
+
+  return `${minutes} min`;
 }
 
 export function compareMailboxes(left: MailboxRecord, right: MailboxRecord): number {

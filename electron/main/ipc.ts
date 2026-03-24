@@ -47,6 +47,9 @@ export function registerIpcHandlers(provider: ManagerProvider): void {
   ipcMain.handle(IPC_CHANNELS.removeInbox, (_event, id: string) => resolveManager(provider).removeInbox(id));
   ipcMain.handle(IPC_CHANNELS.selectInbox, (_event, id: string) => resolveManager(provider).selectInbox(id));
   ipcMain.handle(IPC_CHANNELS.sleepInbox, (_event, id: string) => resolveManager(provider).sleepInbox(id));
+  ipcMain.handle(IPC_CHANNELS.setInboxAutoSleep, (_event, id: string, minutes: number | null) =>
+    resolveManager(provider).setInboxAutoSleep(id, minutes),
+  );
   ipcMain.handle(IPC_CHANNELS.wakeInbox, (_event, id: string) => resolveManager(provider).wakeInbox(id));
   ipcMain.handle(IPC_CHANNELS.openInboxExternal, (_event, id: string) => resolveManager(provider).openInboxExternal(id));
   ipcMain.handle(IPC_CHANNELS.goBackInbox, (_event, id: string) => resolveManager(provider).goBackInbox(id));

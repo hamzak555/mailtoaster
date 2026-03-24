@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus, TriangleAlert } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus, Settings2, TriangleAlert } from 'lucide-react';
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { getAggregateUnreadCount, hasAggregateUnreadDot } from '@shared/mailboxes';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 
 import { AppSettingsDialog } from './app-settings-dialog';
 import { InboxRow } from './inbox-row';
+import { InboxSleepDialog } from './inbox-sleep-dialog';
 import { InboxSidebarPanel, type SidebarPanelState } from './inbox-sidebar-panel';
 import { MailboxToolbar } from './mailbox-toolbar';
 import { MailboxAvatar } from './provider-presentation';
@@ -180,6 +181,7 @@ export function MailToasterShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [panelMode, setPanelMode] = useState<SidebarPanelMode | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sleepDialogInboxId, setSleepDialogInboxId] = useState<string | null>(null);
   const [draggedInboxId, setDraggedInboxId] = useState<string | null>(null);
   const [dragOverInboxId, setDragOverInboxId] = useState<string | null>(null);
   const [previewInboxOrderIds, setPreviewInboxOrderIds] = useState<string[] | null>(null);
@@ -196,6 +198,7 @@ export function MailToasterShell() {
     panelMode?.type === 'rename' ? state.inboxes.find((inbox) => inbox.id === panelMode.inboxId) ?? null : null;
   const removeTarget =
     panelMode?.type === 'remove' ? state.inboxes.find((inbox) => inbox.id === panelMode.inboxId) ?? null : null;
+  const sleepDialogTarget = sleepDialogInboxId ? state.inboxes.find((inbox) => inbox.id === sleepDialogInboxId) ?? null : null;
   const totalUnreadCount = getAggregateUnreadCount(state.inboxes);
   const hasUnreadDot = hasAggregateUnreadDot(state.inboxes);
   const actualInboxOrderIds = useMemo(() => state.inboxes.map((inbox) => inbox.id), [state.inboxes]);
@@ -239,6 +242,12 @@ export function MailToasterShell() {
   }, [panelMode, removeTarget, renameTarget]);
 
   useEffect(() => {
+    if (sleepDialogInboxId && !sleepDialogTarget) {
+      setSleepDialogInboxId(null);
+    }
+  }, [sleepDialogInboxId, sleepDialogTarget]);
+
+  useEffect(() => {
     if (!previewInboxOrderIds) {
       return;
     }
@@ -258,12 +267,12 @@ export function MailToasterShell() {
   }, [actualInboxOrderIds, draggedInboxId, previewInboxOrderIds]);
 
   useEffect(() => {
-    void actions.setNativeOverlayVisible(settingsOpen);
+    void actions.setNativeOverlayVisible(settingsOpen || sleepDialogInboxId !== null);
 
     return () => {
       void actions.setNativeOverlayVisible(false);
     };
-  }, [actions, settingsOpen]);
+  }, [actions, settingsOpen, sleepDialogInboxId]);
 
   useLayoutEffect(() => {
     if (flipFrameRef.current) {
@@ -412,6 +421,31 @@ export function MailToasterShell() {
         open={settingsOpen}
         onAccentThemeChange={(accentThemeId) => void actions.setAccentTheme(accentThemeId)}
         onOpenChange={setSettingsOpen}
+      />
+
+      <InboxSleepDialog
+        inbox={sleepDialogTarget}
+        open={sleepDialogInboxId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSleepDialogInboxId(null);
+          }
+        }}
+        onSetAutoSleep={(minutes) => {
+          if (sleepDialogTarget) {
+            void actions.setInboxAutoSleep(sleepDialogTarget.id, minutes);
+          }
+        }}
+        onSleepUntilWoken={() => {
+          if (sleepDialogTarget) {
+            void actions.setInboxAutoSleep(sleepDialogTarget.id, null).then(() => actions.sleepInbox(sleepDialogTarget.id));
+          }
+        }}
+        onWake={() => {
+          if (sleepDialogTarget) {
+            void actions.wakeInbox(sleepDialogTarget.id);
+          }
+        }}
       />
 
       <main className="flex h-screen flex-col gap-3 p-3 pt-0">
@@ -579,9 +613,7 @@ export function MailToasterShell() {
                             setSidebarNotice(null);
                           }}
                           onSelect={() => void actions.selectInbox(inbox.id)}
-                          onToggleSleep={() =>
-                            void (inbox.sleepState === 'sleeping' ? actions.wakeInbox(inbox.id) : actions.sleepInbox(inbox.id))
-                          }
+                          onOpenSleepSettings={() => setSleepDialogInboxId(inbox.id)}
                           onUploadIcon={() => {
                             setSidebarCollapsed(false);
                             setSidebarNotice(null);
@@ -640,27 +672,6 @@ export function MailToasterShell() {
                 ) : null}
 
                 <div className={cn('flex items-center gap-2', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
-                  <div className="relative">
-                    <Button
-                      className="h-10 w-10 rounded-md px-0"
-                      size="icon"
-                      type="button"
-                      title="Add inbox"
-                      onClick={() => {
-                        setSidebarCollapsed(false);
-                        setPanelMode({ type: 'add' });
-                        setSidebarNotice(null);
-                      }}
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span className="sr-only">Add inbox</span>
-                    </Button>
-
-                    {sidebarCollapsed && sidebarUpdateIndicator ? (
-                      <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-primary ring-2 ring-card" aria-hidden="true" />
-                    ) : null}
-                  </div>
-
                   {!sidebarCollapsed && sidebarUpdateIndicator ? (
                     sidebarUpdateIndicator.kind === 'install' ? (
                       <Button
@@ -685,6 +696,41 @@ export function MailToasterShell() {
                       </Badge>
                     )
                   ) : null}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      className="h-10 w-10 rounded-md px-0"
+                      size="icon"
+                      type="button"
+                      title="Open appearance settings"
+                      variant="outline"
+                      onClick={() => setSettingsOpen(true)}
+                    >
+                      <Settings2 className="h-4 w-4" />
+                      <span className="sr-only">Open appearance settings</span>
+                    </Button>
+
+                    <div className="relative">
+                      <Button
+                        className="h-10 w-10 rounded-md px-0"
+                        size="icon"
+                        type="button"
+                        title="Add inbox"
+                        onClick={() => {
+                          setSidebarCollapsed(false);
+                          setPanelMode({ type: 'add' });
+                          setSidebarNotice(null);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span className="sr-only">Add inbox</span>
+                      </Button>
+
+                      {sidebarCollapsed && sidebarUpdateIndicator ? (
+                        <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-primary ring-2 ring-card" aria-hidden="true" />
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </div>
             </aside>
@@ -717,7 +763,6 @@ export function MailToasterShell() {
             <MailboxToolbar
               inbox={selectedInbox ?? null}
               viewState={selectedViewState}
-              onOpenSettings={() => setSettingsOpen(true)}
               onBack={async () => {
                 if (selectedInbox) {
                   await actions.goBackInbox(selectedInbox.id);

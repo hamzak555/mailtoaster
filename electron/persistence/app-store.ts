@@ -8,9 +8,10 @@ import type {
   PersistedMailboxNotificationState,
   PersistedWindowBounds,
 } from '@shared/mailboxes';
+import { isMailboxAutoSleepMinutes } from '@shared/mailboxes';
 
 const STORE_FILE_NAME = 'mail-toaster-state.json';
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 
 const DEFAULT_STATE: PersistedAppState = {
   version: STORE_VERSION,
@@ -62,6 +63,8 @@ function isMailboxRecord(value: unknown): value is MailboxRecord {
       typeof mailbox.customIconDataUrl === 'string') &&
     typeof mailbox.partition === 'string' &&
     (mailbox.sleepState === 'awake' || mailbox.sleepState === 'sleeping') &&
+    (mailbox.sleepMode === undefined || mailbox.sleepMode === 'manual' || mailbox.sleepMode === 'inactivity') &&
+    (mailbox.sleepAfterMinutes === undefined || mailbox.sleepAfterMinutes === null || isMailboxAutoSleepMinutes(mailbox.sleepAfterMinutes)) &&
     (mailbox.unreadState === 'none' || mailbox.unreadState === 'dot' || mailbox.unreadState === 'count') &&
     (mailbox.unreadCount === null || typeof mailbox.unreadCount === 'number') &&
     typeof mailbox.sortOrder === 'number' &&
@@ -79,7 +82,13 @@ function sanitizeState(value: unknown): PersistedAppState {
 
   return {
     version: STORE_VERSION,
-    inboxes: Array.isArray(candidate.inboxes) ? candidate.inboxes.filter(isMailboxRecord) : [],
+    inboxes: Array.isArray(candidate.inboxes)
+      ? candidate.inboxes.filter(isMailboxRecord).map((mailbox) => ({
+          ...mailbox,
+          sleepMode: mailbox.sleepMode === 'inactivity' ? 'inactivity' : 'manual',
+          sleepAfterMinutes: isMailboxAutoSleepMinutes(mailbox.sleepAfterMinutes) ? mailbox.sleepAfterMinutes : null,
+        }))
+      : [],
     selectedInboxId: typeof candidate.selectedInboxId === 'string' ? candidate.selectedInboxId : null,
     windowBounds:
       candidate.windowBounds && typeof candidate.windowBounds === 'object'

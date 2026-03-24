@@ -61,6 +61,7 @@ export interface MailToasterApi {
   removeInbox: (id: string) => Promise<void>;
   selectInbox: (id: string) => Promise<void>;
   sleepInbox: (id: string) => Promise<void>;
+  setInboxAutoSleep: (id: string, minutes: number | null) => Promise<void>;
   wakeInbox: (id: string) => Promise<void>;
   openInboxExternal: (id: string) => Promise<void>;
   goBackInbox: (id: string) => Promise<void>;
@@ -87,6 +88,7 @@ export const IPC_CHANNELS = {
   removeInbox: 'mail-toaster:remove-inbox',
   selectInbox: 'mail-toaster:select-inbox',
   sleepInbox: 'mail-toaster:sleep-inbox',
+  setInboxAutoSleep: 'mail-toaster:set-inbox-auto-sleep',
   wakeInbox: 'mail-toaster:wake-inbox',
   openInboxExternal: 'mail-toaster:open-inbox-external',
   goBackInbox: 'mail-toaster:go-back-inbox',

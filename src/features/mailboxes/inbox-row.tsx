@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, GripVertical, ImagePlus, MoonStar, Pencil, RotateCcw, Settings2, Trash2, Zap } from 'lucide-react';
+import { ExternalLink, GripVertical, ImagePlus, MoonStar, Pencil, RotateCcw, Settings2, Trash2 } from 'lucide-react';
 
 import type { MailboxRecord } from '@shared/mailboxes';
 
@@ -48,7 +48,7 @@ interface InboxRowProps {
   onSelect: () => void;
   onRename: () => void;
   onRemove: () => void;
-  onToggleSleep: () => void;
+  onOpenSleepSettings: () => void;
   onOpenExternal: () => void;
   onUploadIcon: () => void;
   onResetIcon: () => void;
@@ -67,7 +67,7 @@ export function InboxRow({
   onSelect,
   onRename,
   onRemove,
-  onToggleSleep,
+  onOpenSleepSettings,
   onOpenExternal,
   onUploadIcon,
   onResetIcon,
@@ -173,9 +173,9 @@ export function InboxRow({
               <Pencil className="h-4 w-4" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onToggleSleep}>
-              {inbox.sleepState === 'sleeping' ? <Zap className="h-4 w-4" /> : <MoonStar className="h-4 w-4" />}
-              {inbox.sleepState === 'sleeping' ? 'Wake' : 'Sleep'}
+            <DropdownMenuItem onSelect={onOpenSleepSettings}>
+              <MoonStar className="h-4 w-4" />
+              Sleep
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onOpenExternal}>
               <ExternalLink className="h-4 w-4" />

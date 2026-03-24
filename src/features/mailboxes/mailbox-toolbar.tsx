@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, House, RefreshCw, Settings2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, House, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { MailboxRecord } from '@shared/mailboxes';
@@ -15,7 +15,6 @@ import { MailboxAvatar } from './provider-presentation';
 interface MailboxToolbarProps {
   inbox: MailboxRecord | null;
   viewState?: MailboxViewState;
-  onOpenSettings: () => void;
   onBack: () => Promise<void>;
   onForward: () => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -26,7 +25,6 @@ interface MailboxToolbarProps {
 export function MailboxToolbar({
   inbox,
   viewState,
-  onOpenSettings,
   onBack,
   onForward,
   onRefresh,
@@ -147,11 +145,6 @@ export function MailboxToolbar({
           </div>
         </div>
       ) : null}
-
-      <Button className="h-9 w-9 rounded-md" size="icon" type="button" variant="outline" onClick={onOpenSettings}>
-        <Settings2 className="h-4 w-4" />
-        <span className="sr-only">Open settings</span>
-      </Button>
     </div>
   );
 }
