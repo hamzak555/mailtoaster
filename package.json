@@ -1,6 +1,6 @@
 {
   "name": "mail-toaster",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Minimal multi-inbox desktop shell for Gmail, Outlook, Protonmail, and WhatsApp",
   "productName": "Mail Toaster",
