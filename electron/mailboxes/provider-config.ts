@@ -4,6 +4,7 @@ interface ProviderConfig {
   defaultTargetUrl: string;
   allowedHosts: string[];
   allowedAvatarHosts: string[];
+  resumeHosts: string[];
 }
 
 const PROVIDER_CONFIG: Record<MailboxProvider, ProviderConfig> = {
@@ -18,6 +19,7 @@ const PROVIDER_CONFIG: Record<MailboxProvider, ProviderConfig> = {
       'gstatic.com',
       'googleapis.com',
     ],
+    resumeHosts: ['mail.google.com'],
   },
   outlook: {
     defaultTargetUrl: 'https://outlook.office.com/mail/',
@@ -42,11 +44,19 @@ const PROVIDER_CONFIG: Record<MailboxProvider, ProviderConfig> = {
       'office365.com',
       'sharepoint.com',
     ],
+    resumeHosts: ['outlook.office.com', 'outlook.office365.com', 'outlook.live.com'],
   },
   protonmail: {
     defaultTargetUrl: 'https://mail.proton.me/u/0/inbox',
     allowedHosts: ['mail.proton.me', 'account.proton.me', 'proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
     allowedAvatarHosts: ['mail.proton.me', 'account.proton.me', 'proton.me', 'protonmail.com', 'protonmail.ch', 'pm.me'],
+    resumeHosts: ['mail.proton.me'],
+  },
+  whatsapp: {
+    defaultTargetUrl: 'https://web.whatsapp.com/',
+    allowedHosts: ['web.whatsapp.com'],
+    allowedAvatarHosts: ['web.whatsapp.com', 'mmg.whatsapp.net', 'pps.whatsapp.net', 'static.whatsapp.net'],
+    resumeHosts: ['web.whatsapp.com'],
   },
 };
 
@@ -81,6 +91,16 @@ export function isAllowedAvatarAssetUrl(provider: MailboxProvider, candidateUrl:
     const parsedUrl = new URL(candidateUrl);
 
     return parsedUrl.protocol === 'https:' && isAllowedHost(parsedUrl.hostname, PROVIDER_CONFIG[provider].allowedAvatarHosts);
+  } catch {
+    return false;
+  }
+}
+
+export function isResumableMailboxUrl(provider: MailboxProvider, candidateUrl: string): boolean {
+  try {
+    const parsedUrl = new URL(candidateUrl);
+
+    return parsedUrl.protocol === 'https:' && isAllowedHost(parsedUrl.hostname, PROVIDER_CONFIG[provider].resumeHosts);
   } catch {
     return false;
   }

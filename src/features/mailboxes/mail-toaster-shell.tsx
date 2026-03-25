@@ -1,16 +1,27 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoonStar, Plus, Settings2, TriangleAlert } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Download, FolderPlus, GripVertical, LoaderCircle, MoonStar, MoreHorizontal, Plus, Settings2, TriangleAlert } from 'lucide-react';
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { getAggregateUnreadCount, hasAggregateUnreadDot } from '@shared/mailboxes';
-import type { AppUpdateState } from '@shared/ipc';
+import {
+  DEFAULT_MAILBOX_GROUP_ID,
+  compareMailboxGroups,
+  compareMailboxes,
+  getAggregateUnreadCount,
+  hasAggregateUnreadDot,
+  type MailboxGroup,
+  type MailboxRecord,
+} from '@shared/mailboxes';
+import type { AppUpdateState, SaveSidebarLayoutInput } from '@shared/ipc';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 import { AppSettingsDialog } from './app-settings-dialog';
+import { GroupIcon } from './group-icons';
+import { GroupSortDialog } from './group-sort-dialog';
 import { InboxRow } from './inbox-row';
 import { InboxSleepDialog } from './inbox-sleep-dialog';
 import { InboxSidebarPanel, type SidebarPanelState } from './inbox-sidebar-panel';
@@ -21,40 +32,127 @@ import { useAppUpdateState } from './use-app-update-state';
 import { useMailToaster } from './use-mail-toaster';
 
 const ICON_EXPORT_SIZE = 160;
+const SIDEBAR_POINTER_DRAG_THRESHOLD_PX = 10;
 
-type SidebarPanelMode = { type: 'add' } | { type: 'rename'; inboxId: string } | { type: 'remove'; inboxId: string };
+type SidebarPanelMode =
+  | { type: 'add-inbox' }
+  | { type: 'edit-inbox'; inboxId: string }
+  | { type: 'remove-inbox'; inboxId: string }
+  | { type: 'add-group' }
+  | { type: 'rename-group'; groupId: string }
+  | { type: 'remove-group'; groupId: string };
 
 type DragPlacement = 'before' | 'after';
+type SidebarGroupLayout = SaveSidebarLayoutInput['groups'][number];
+type PointerPoint = { x: number; y: number };
+type SidebarPointerDrag =
+  | {
+      kind: 'group';
+      pointerId: number;
+      groupId: string;
+      origin: PointerPoint;
+      current: PointerPoint;
+      offset: PointerPoint;
+      rect: { width: number; height: number };
+      active: boolean;
+      name: string;
+      icon: MailboxGroup['icon'];
+      emoji: MailboxGroup['emoji'];
+    }
+  | {
+      kind: 'inbox';
+      pointerId: number;
+      inboxId: string;
+      groupId: string;
+      origin: PointerPoint;
+      current: PointerPoint;
+      offset: PointerPoint;
+      rect: { width: number; height: number };
+      active: boolean;
+      inbox: MailboxRecord;
+    };
 
-function reorderInboxIds(inboxIds: string[], sourceId: string, targetId: string, placement: DragPlacement) {
-  if (sourceId === targetId) {
-    return inboxIds;
-  }
-
-  const sourceIndex = inboxIds.indexOf(sourceId);
-  const targetIndex = inboxIds.indexOf(targetId);
-
-  if (sourceIndex === -1 || targetIndex === -1) {
-    return inboxIds;
-  }
-
-  const nextInboxIds = [...inboxIds];
-  const [movedInboxId] = nextInboxIds.splice(sourceIndex, 1);
-  const adjustedTargetIndex = nextInboxIds.indexOf(targetId);
-
-  if (adjustedTargetIndex === -1) {
-    return inboxIds;
-  }
-
-  const insertionIndex = placement === 'after' ? adjustedTargetIndex + 1 : adjustedTargetIndex;
-
-  nextInboxIds.splice(insertionIndex, 0, movedInboxId);
-
-  return nextInboxIds;
+function getVerticalDragPlacement(bounds: DOMRect, clientY: number): DragPlacement {
+  return clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before';
 }
 
-function inboxOrderMatches(left: string[], right: string[]) {
-  return left.join('|') === right.join('|');
+function sidebarLayoutsMatch(left: SaveSidebarLayoutInput, right: SaveSidebarLayoutInput) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasExceededPointerDragThreshold(origin: PointerPoint, current: PointerPoint) {
+  return Math.hypot(current.x - origin.x, current.y - origin.y) >= SIDEBAR_POINTER_DRAG_THRESHOLD_PX;
+}
+
+function getGroupUnreadIndicator(inboxes: Pick<MailboxRecord, 'unreadState' | 'unreadCount'>[]) {
+  const unreadCount = getAggregateUnreadCount(inboxes);
+  const hasUnreadDot = hasAggregateUnreadDot(inboxes);
+
+  if (unreadCount > 0) {
+    return unreadCount > 99 ? '99+' : String(unreadCount);
+  }
+
+  return hasUnreadDot ? '•' : null;
+}
+
+function moveGroupLayouts(
+  groups: SidebarGroupLayout[],
+  sourceGroupId: string,
+  targetGroupId: string,
+  placement: DragPlacement,
+): SidebarGroupLayout[] {
+  if (sourceGroupId === targetGroupId) {
+    return groups;
+  }
+
+  const sourceIndex = groups.findIndex((group) => group.groupId === sourceGroupId);
+  const targetIndex = groups.findIndex((group) => group.groupId === targetGroupId);
+
+  if (sourceIndex === -1 || targetIndex === -1) {
+    return groups;
+  }
+
+  const nextGroups = groups.map((group) => ({
+    ...group,
+    inboxIds: [...group.inboxIds],
+  }));
+  const [movedGroup] = nextGroups.splice(sourceIndex, 1);
+  const adjustedTargetIndex = nextGroups.findIndex((group) => group.groupId === targetGroupId);
+
+  if (adjustedTargetIndex === -1) {
+    return groups;
+  }
+
+  nextGroups.splice(placement === 'after' ? adjustedTargetIndex + 1 : adjustedTargetIndex, 0, movedGroup);
+  return nextGroups;
+}
+
+function moveInboxAcrossGroups(
+  layout: SaveSidebarLayoutInput,
+  sourceInboxId: string,
+  targetGroupId: string,
+  targetInboxId?: string | null,
+  placement: DragPlacement = 'after',
+): SaveSidebarLayoutInput {
+  const nextGroups = layout.groups.map((group) => ({
+    ...group,
+    inboxIds: group.inboxIds.filter((inboxId) => inboxId !== sourceInboxId),
+  }));
+  const targetGroup = nextGroups.find((group) => group.groupId === targetGroupId);
+
+  if (!targetGroup) {
+    return layout;
+  }
+
+  if (!targetInboxId || !targetGroup.inboxIds.includes(targetInboxId)) {
+    targetGroup.inboxIds.push(sourceInboxId);
+    return { groups: nextGroups };
+  }
+
+  const targetIndex = targetGroup.inboxIds.indexOf(targetInboxId);
+  targetGroup.inboxIds.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, sourceInboxId);
+
+  return { groups: nextGroups };
 }
 
 function getSidebarUpdateIndicator(state: AppUpdateState | null) {
@@ -178,41 +276,77 @@ async function prepareInboxIconDataUrl(file: File): Promise<string> {
 export function MailToasterShell() {
   const { state, selectedInbox, ready, error, actions } = useMailToaster();
   const { updateState, installDownloadedUpdate } = useAppUpdateState();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [panelMode, setPanelMode] = useState<SidebarPanelMode | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sleepDialogInboxId, setSleepDialogInboxId] = useState<string | null>(null);
+  const [groupSortOpen, setGroupSortOpen] = useState(false);
+  const [toolbarActionsOpen, setToolbarActionsOpen] = useState(false);
+  const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
   const [draggedInboxId, setDraggedInboxId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
   const [dragOverInboxId, setDragOverInboxId] = useState<string | null>(null);
-  const [previewInboxOrderIds, setPreviewInboxOrderIds] = useState<string[] | null>(null);
+  const [previewSidebarLayout, setPreviewSidebarLayout] = useState<SaveSidebarLayoutInput | null>(null);
+  const [pointerDrag, setPointerDrag] = useState<SidebarPointerDrag | null>(null);
   const [iconUploadTargetId, setIconUploadTargetId] = useState<string | null>(null);
   const [sidebarNotice, setSidebarNotice] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const groupSectionRefs = useRef(new Map<string, HTMLElement>());
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const rowTopsRef = useRef(new Map<string, number>());
   const flipFrameRef = useRef<number | null>(null);
+  const pointerDragRef = useRef<SidebarPointerDrag | null>(null);
   const reorderCommittedRef = useRef(false);
-
-  const renameTarget =
-    panelMode?.type === 'rename' ? state.inboxes.find((inbox) => inbox.id === panelMode.inboxId) ?? null : null;
-  const removeTarget =
-    panelMode?.type === 'remove' ? state.inboxes.find((inbox) => inbox.id === panelMode.inboxId) ?? null : null;
+  const groupById = useMemo(() => new Map(state.groups.map((group) => [group.id, group])), [state.groups]);
+  const inboxById = useMemo(() => new Map(state.inboxes.map((inbox) => [inbox.id, inbox])), [state.inboxes]);
+  const editTarget = panelMode?.type === 'edit-inbox' ? inboxById.get(panelMode.inboxId) ?? null : null;
+  const removeTarget = panelMode?.type === 'remove-inbox' ? inboxById.get(panelMode.inboxId) ?? null : null;
+  const renameGroupTarget = panelMode?.type === 'rename-group' ? groupById.get(panelMode.groupId) ?? null : null;
+  const removeGroupTarget = panelMode?.type === 'remove-group' ? groupById.get(panelMode.groupId) ?? null : null;
   const sleepDialogTarget = sleepDialogInboxId ? state.inboxes.find((inbox) => inbox.id === sleepDialogInboxId) ?? null : null;
+  const orderedGroups = useMemo(() => [...state.groups].sort(compareMailboxGroups), [state.groups]);
   const totalUnreadCount = getAggregateUnreadCount(state.inboxes);
   const hasUnreadDot = hasAggregateUnreadDot(state.inboxes);
-  const actualInboxOrderIds = useMemo(() => state.inboxes.map((inbox) => inbox.id), [state.inboxes]);
-  const renderedInboxes = useMemo(() => {
-    if (!previewInboxOrderIds) {
-      return state.inboxes;
-    }
+  const actualSidebarLayout = useMemo<SaveSidebarLayoutInput>(
+    () => ({
+      groups: orderedGroups.map((group) => ({
+        groupId: group.id,
+        inboxIds: state.inboxes
+          .filter((inbox) => inbox.groupId === group.id)
+          .sort(compareMailboxes)
+          .map((inbox) => inbox.id),
+      })),
+    }),
+    [orderedGroups, state.inboxes],
+  );
+  const renderedSidebarLayout = previewSidebarLayout ?? actualSidebarLayout;
+  const renderedGroupSections = useMemo(
+    () =>
+      renderedSidebarLayout.groups
+        .map((layoutGroup) => {
+          const group = groupById.get(layoutGroup.groupId);
 
-    const inboxById = new Map(state.inboxes.map((inbox) => [inbox.id, inbox]));
+          if (!group) {
+            return null;
+          }
 
-    return previewInboxOrderIds
-      .map((inboxId) => inboxById.get(inboxId))
-      .filter((inbox): inbox is (typeof state.inboxes)[number] => Boolean(inbox));
-  }, [previewInboxOrderIds, state.inboxes]);
+          const inboxes = layoutGroup.inboxIds
+            .map((inboxId) => inboxById.get(inboxId))
+            .filter((inbox): inbox is MailboxRecord => Boolean(inbox));
+
+          return {
+            group,
+            inboxes,
+          };
+        })
+        .filter((section): section is { group: MailboxGroup; inboxes: MailboxRecord[] } => Boolean(section)),
+    [groupById, inboxById, renderedSidebarLayout],
+  );
+  const renderedInboxes = useMemo(
+    () => renderedGroupSections.flatMap((section) => section.inboxes),
+    [renderedGroupSections],
+  );
   const totalUnreadBadge = totalUnreadCount > 0 ? `${totalUnreadCount}${hasUnreadDot ? '+' : ''}` : hasUnreadDot ? '•' : null;
   const unreadSummaryText =
     totalUnreadCount > 0
@@ -223,23 +357,38 @@ export function MailToasterShell() {
   const selectedViewState = selectedInbox ? state.viewStates[selectedInbox.id] : undefined;
   const sidebarUpdateIndicator = useMemo(() => getSidebarUpdateIndicator(updateState), [updateState]);
   const sidebarUpdatePanel = useMemo(() => getSidebarUpdatePanel(updateState), [updateState]);
+  const groupSortItems = useMemo(
+    () =>
+      orderedGroups.map((group) => ({
+        group,
+        unreadIndicator: getGroupUnreadIndicator(state.inboxes.filter((inbox) => inbox.groupId === group.id)),
+      })),
+    [orderedGroups, state.inboxes],
+  );
 
   useAppliedAccentTheme(state.appearanceSettings.accentThemeId);
 
   const sidebarPanel: SidebarPanelState | null =
-    panelMode?.type === 'add'
-      ? { type: 'add' }
-      : panelMode?.type === 'rename' && renameTarget
-        ? { type: 'rename', inbox: renameTarget }
-        : panelMode?.type === 'remove' && removeTarget
-          ? { type: 'remove', inbox: removeTarget }
-          : null;
+    panelMode?.type === 'add-inbox'
+      ? { type: 'add-inbox' }
+      : panelMode?.type === 'edit-inbox' && editTarget
+        ? { type: 'edit-inbox', inbox: editTarget }
+        : panelMode?.type === 'remove-inbox' && removeTarget
+          ? { type: 'remove-inbox', inbox: removeTarget }
+          : panelMode?.type === 'add-group'
+            ? { type: 'add-group' }
+            : panelMode?.type === 'rename-group' && renameGroupTarget
+              ? { type: 'rename-group', group: renameGroupTarget }
+              : panelMode?.type === 'remove-group' && removeGroupTarget
+                ? { type: 'remove-group', group: removeGroupTarget }
+                : null;
+  const nativeOverlayVisible = settingsOpen || sleepDialogInboxId !== null || sidebarPanel !== null || toolbarActionsOpen || groupSortOpen;
 
   useEffect(() => {
-    if ((panelMode?.type === 'rename' && !renameTarget) || (panelMode?.type === 'remove' && !removeTarget)) {
+    if (panelMode && !sidebarPanel) {
       setPanelMode(null);
     }
-  }, [panelMode, removeTarget, renameTarget]);
+  }, [panelMode, sidebarPanel]);
 
   useEffect(() => {
     if (sleepDialogInboxId && !sleepDialogTarget) {
@@ -248,31 +397,37 @@ export function MailToasterShell() {
   }, [sleepDialogInboxId, sleepDialogTarget]);
 
   useEffect(() => {
-    if (!previewInboxOrderIds) {
+    if (!previewSidebarLayout) {
       return;
     }
 
-    const previewOrderKey = previewInboxOrderIds.join('|');
-    const actualOrderKey = actualInboxOrderIds.join('|');
-
-    if (previewOrderKey === actualOrderKey) {
+    if (sidebarLayoutsMatch(previewSidebarLayout, actualSidebarLayout)) {
       reorderCommittedRef.current = false;
-      setPreviewInboxOrderIds(null);
+      setPreviewSidebarLayout(null);
       return;
     }
 
-    if (!draggedInboxId && !reorderCommittedRef.current) {
-      setPreviewInboxOrderIds(null);
+    if (!draggedInboxId && !draggedGroupId && !reorderCommittedRef.current) {
+      setPreviewSidebarLayout(null);
     }
-  }, [actualInboxOrderIds, draggedInboxId, previewInboxOrderIds]);
+  }, [actualSidebarLayout, draggedGroupId, draggedInboxId, previewSidebarLayout]);
 
   useEffect(() => {
-    void actions.setNativeOverlayVisible(settingsOpen || sleepDialogInboxId !== null);
+    void actions.setNativeOverlayVisible(nativeOverlayVisible);
+  }, [actions, nativeOverlayVisible]);
 
-    return () => {
+  useEffect(
+    () => () => {
       void actions.setNativeOverlayVisible(false);
-    };
-  }, [actions, settingsOpen, sleepDialogInboxId]);
+    },
+    [actions],
+  );
+
+  useEffect(() => {
+    if (!selectedInbox && toolbarActionsOpen) {
+      setToolbarActionsOpen(false);
+    }
+  }, [selectedInbox, toolbarActionsOpen]);
 
   useLayoutEffect(() => {
     if (flipFrameRef.current) {
@@ -330,13 +485,319 @@ export function MailToasterShell() {
     };
   }, [renderedInboxes, sidebarCollapsed]);
 
-  const handleReorder = async (orderedInboxIds: string[]) => {
-    if (inboxOrderMatches(orderedInboxIds, actualInboxOrderIds)) {
+  const clearDragState = () => {
+    pointerDragRef.current = null;
+    setPointerDrag(null);
+    setDraggedGroupId(null);
+    setDraggedInboxId(null);
+    setDragOverGroupId(null);
+    setDragOverInboxId(null);
+  };
+
+  const handleSidebarLayoutSave = async (layout: SaveSidebarLayoutInput) => {
+    if (sidebarLayoutsMatch(layout, actualSidebarLayout)) {
       return;
     }
 
-    await actions.reorderInboxes(orderedInboxIds);
+    await actions.saveSidebarLayout(layout);
   };
+
+  const commitSidebarLayout = (layout: SaveSidebarLayoutInput) => {
+    reorderCommittedRef.current = true;
+    setPreviewSidebarLayout(layout);
+    clearDragState();
+
+    void handleSidebarLayoutSave(layout).catch(() => {
+      reorderCommittedRef.current = false;
+      setPreviewSidebarLayout(null);
+    });
+  };
+
+  const getClosestGroupSection = (point: PointerPoint, excludedGroupId?: string) => {
+    const candidates = renderedGroupSections
+      .filter(({ group }) => group.id !== excludedGroupId)
+      .map(({ group, inboxes }) => {
+        const element = groupSectionRefs.current.get(group.id);
+
+        if (!element) {
+          return null;
+        }
+
+        const bounds = element.getBoundingClientRect();
+        const horizontalDistance = point.x < bounds.left ? bounds.left - point.x : point.x > bounds.right ? point.x - bounds.right : 0;
+        const verticalDistance = point.y < bounds.top ? bounds.top - point.y : point.y > bounds.bottom ? point.y - bounds.bottom : 0;
+
+        return {
+          group,
+          inboxes,
+          bounds,
+          distance: Math.hypot(horizontalDistance, verticalDistance),
+          inside: horizontalDistance === 0 && verticalDistance === 0,
+        };
+      })
+      .filter(
+        (candidate): candidate is {
+          group: MailboxGroup;
+          inboxes: MailboxRecord[];
+          bounds: DOMRect;
+          distance: number;
+          inside: boolean;
+        } => Boolean(candidate),
+      );
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return candidates.find((candidate) => candidate.inside) ?? [...candidates].sort((left, right) => left.distance - right.distance)[0]!;
+  };
+
+  const getInboxDropTarget = (point: PointerPoint, sourceInboxId: string) => {
+    const targetSection = getClosestGroupSection(point);
+
+    if (!targetSection) {
+      return null;
+    }
+
+    const rowCandidates = targetSection.inboxes
+      .filter((inbox) => inbox.id !== sourceInboxId)
+      .map((inbox) => {
+        const element = rowRefs.current.get(inbox.id);
+
+        if (!element) {
+          return null;
+        }
+
+        const bounds = element.getBoundingClientRect();
+        const horizontalDistance = point.x < bounds.left ? bounds.left - point.x : point.x > bounds.right ? point.x - bounds.right : 0;
+        const verticalDistance = point.y < bounds.top ? bounds.top - point.y : point.y > bounds.bottom ? point.y - bounds.bottom : 0;
+
+        return {
+          inbox,
+          bounds,
+          distance: Math.hypot(horizontalDistance, verticalDistance),
+          inside: horizontalDistance === 0 && verticalDistance === 0,
+        };
+      })
+      .filter(
+        (candidate): candidate is { inbox: MailboxRecord; bounds: DOMRect; distance: number; inside: boolean } => Boolean(candidate),
+      );
+
+    if (targetSection.group.collapsed || rowCandidates.length === 0) {
+      return {
+        groupId: targetSection.group.id,
+        targetInboxId: null,
+        placement: 'after' as DragPlacement,
+        dragOverInboxId: null,
+        dragOverGroupId: targetSection.group.id,
+      };
+    }
+
+    const targetRow =
+      rowCandidates.find((candidate) => candidate.inside) ?? [...rowCandidates].sort((left, right) => left.distance - right.distance)[0]!;
+
+    return {
+      groupId: targetSection.group.id,
+      targetInboxId: targetRow.inbox.id,
+      placement: getVerticalDragPlacement(targetRow.bounds, point.y),
+      dragOverInboxId: targetRow.inbox.id,
+      dragOverGroupId: targetSection.group.id,
+    };
+  };
+
+  const beginGroupPointerDrag = (event: React.PointerEvent<HTMLButtonElement>, group: MailboxGroup) => {
+    if (sidebarCollapsed) {
+      return;
+    }
+
+    const element = groupSectionRefs.current.get(group.id) ?? event.currentTarget;
+    const bounds = element.getBoundingClientRect();
+    const session: SidebarPointerDrag = {
+      kind: 'group',
+      pointerId: event.pointerId,
+      groupId: group.id,
+      origin: { x: event.clientX, y: event.clientY },
+      current: { x: event.clientX, y: event.clientY },
+      offset: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      rect: { width: bounds.width, height: bounds.height },
+      active: false,
+      name: group.name,
+      icon: group.icon,
+      emoji: group.emoji,
+    };
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.getSelection()?.removeAllRanges();
+
+    reorderCommittedRef.current = false;
+    pointerDragRef.current = session;
+    setPointerDrag(session);
+    setDraggedGroupId(group.id);
+    setDraggedInboxId(null);
+    setDragOverGroupId(null);
+    setDragOverInboxId(null);
+    setPreviewSidebarLayout(null);
+  };
+
+  const beginInboxPointerDrag = (event: React.PointerEvent<HTMLDivElement>, inbox: MailboxRecord) => {
+    if (sidebarCollapsed) {
+      return;
+    }
+
+    const element = rowRefs.current.get(inbox.id);
+
+    if (!element) {
+      return;
+    }
+
+    const bounds = element.getBoundingClientRect();
+    const session: SidebarPointerDrag = {
+      kind: 'inbox',
+      pointerId: event.pointerId,
+      inboxId: inbox.id,
+      groupId: inbox.groupId,
+      origin: { x: event.clientX, y: event.clientY },
+      current: { x: event.clientX, y: event.clientY },
+      offset: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      rect: { width: bounds.width, height: bounds.height },
+      active: false,
+      inbox,
+    };
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.getSelection()?.removeAllRanges();
+
+    reorderCommittedRef.current = false;
+    pointerDragRef.current = session;
+    setPointerDrag(session);
+    setDraggedGroupId(null);
+    setDraggedInboxId(inbox.id);
+    setDragOverGroupId(null);
+    setDragOverInboxId(null);
+    setPreviewSidebarLayout(null);
+  };
+
+  const handleWindowPointerMove = useEffectEvent((event: PointerEvent) => {
+    const currentDrag = pointerDragRef.current;
+
+    if (!currentDrag || event.pointerId !== currentDrag.pointerId) {
+      return;
+    }
+
+    const point = { x: event.clientX, y: event.clientY };
+    const nextDrag: SidebarPointerDrag = {
+      ...currentDrag,
+      current: point,
+      active: currentDrag.active || hasExceededPointerDragThreshold(currentDrag.origin, point),
+    };
+
+    pointerDragRef.current = nextDrag;
+    setPointerDrag(nextDrag);
+
+    if (!nextDrag.active) {
+      return;
+    }
+
+    if (nextDrag.kind === 'group') {
+      const targetSection = getClosestGroupSection(point, nextDrag.groupId);
+
+      setDraggedGroupId(nextDrag.groupId);
+      setDraggedInboxId(null);
+      setDragOverInboxId(null);
+
+      if (!targetSection) {
+        setDragOverGroupId(null);
+        setPreviewSidebarLayout(null);
+        return;
+      }
+
+      const nextLayout = {
+        groups: moveGroupLayouts(actualSidebarLayout.groups, nextDrag.groupId, targetSection.group.id, getVerticalDragPlacement(targetSection.bounds, point.y)),
+      };
+
+      setDragOverGroupId(targetSection.group.id);
+      setPreviewSidebarLayout(sidebarLayoutsMatch(nextLayout, actualSidebarLayout) ? null : nextLayout);
+      return;
+    }
+
+    const target = getInboxDropTarget(point, nextDrag.inboxId);
+
+    setDraggedGroupId(null);
+    setDraggedInboxId(nextDrag.inboxId);
+
+    if (!target) {
+      setDragOverGroupId(null);
+      setDragOverInboxId(null);
+      setPreviewSidebarLayout(null);
+      return;
+    }
+
+    const nextLayout = moveInboxAcrossGroups(
+      actualSidebarLayout,
+      nextDrag.inboxId,
+      target.groupId,
+      target.targetInboxId,
+      target.placement,
+    );
+
+    setDragOverGroupId(target.dragOverGroupId);
+    setDragOverInboxId(target.dragOverInboxId);
+    setPreviewSidebarLayout(sidebarLayoutsMatch(nextLayout, actualSidebarLayout) ? null : nextLayout);
+  });
+
+  const handleWindowPointerUp = useEffectEvent((event: PointerEvent) => {
+    const currentDrag = pointerDragRef.current;
+
+    if (!currentDrag || event.pointerId !== currentDrag.pointerId) {
+      return;
+    }
+
+    const shouldCommit =
+      currentDrag.active &&
+      previewSidebarLayout !== null &&
+      !sidebarLayoutsMatch(previewSidebarLayout, actualSidebarLayout);
+
+    if (shouldCommit) {
+      commitSidebarLayout(previewSidebarLayout);
+      return;
+    }
+
+    clearDragState();
+    setPreviewSidebarLayout(null);
+  });
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => handleWindowPointerMove(event);
+    const handlePointerUp = (event: PointerEvent) => handleWindowPointerUp(event);
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [handleWindowPointerMove, handleWindowPointerUp]);
+
+  useEffect(() => {
+    if (!pointerDrag?.active) {
+      return;
+    }
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+    };
+  }, [pointerDrag?.active]);
 
   const syncViewport = useEffectEvent(() => {
     const viewport = viewportRef.current;
@@ -448,6 +909,26 @@ export function MailToasterShell() {
         }}
       />
 
+      <GroupSortDialog
+        groups={groupSortItems}
+        layout={actualSidebarLayout}
+        open={groupSortOpen}
+        onOpenChange={setGroupSortOpen}
+        onSave={actions.saveSidebarLayout}
+      />
+
+      <InboxSidebarPanel
+        groups={orderedGroups}
+        panel={sidebarPanel}
+        onClose={() => setPanelMode(null)}
+        onCreateGroup={actions.createGroup}
+        onCreateInbox={actions.createInbox}
+        onRemoveGroup={actions.removeGroup}
+        onRemoveInbox={actions.removeInbox}
+        onRenameGroup={actions.renameGroup}
+        onUpdateInbox={actions.updateInbox}
+      />
+
       <main className="flex h-screen flex-col gap-3 p-3 pt-0">
         <div className="app-drag h-10 shrink-0" />
 
@@ -459,22 +940,14 @@ export function MailToasterShell() {
                 sidebarCollapsed ? 'w-[92px]' : 'w-[312px]',
               )}
             >
-              {!sidebarCollapsed && (sidebarPanel || sidebarNotice) ? (
+              {!sidebarCollapsed && sidebarNotice ? (
                 <div className="border-b border-border/30 p-3">
-                  <InboxSidebarPanel
-                    panel={sidebarPanel}
-                    onClose={() => setPanelMode(null)}
-                    onCreate={actions.createInbox}
-                    onRemove={actions.removeInbox}
-                    onRename={actions.renameInbox}
-                  />
-
-                  {sidebarNotice ? <p className={cn(sidebarPanel ? 'mt-3' : '', 'text-sm text-danger')}>{sidebarNotice}</p> : null}
+                  <div className="rounded-[1rem] border border-danger/20 bg-danger/8 px-3 py-2.5 text-sm text-danger">{sidebarNotice}</div>
                 </div>
               ) : null}
 
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                {state.inboxes.length === 0 ? (
+                {renderedInboxes.length === 0 ? (
                   <div
                     className={cn(
                       'flex h-full items-center justify-center text-center text-sm text-muted-foreground',
@@ -483,130 +956,242 @@ export function MailToasterShell() {
                   >
                     {sidebarCollapsed ? '0' : 'No inboxes'}
                   </div>
+                ) : sidebarCollapsed ? (
+                  <div className="space-y-2">
+                    {renderedGroupSections.map(({ group, inboxes }) => {
+                      const unreadIndicator = getGroupUnreadIndicator(inboxes);
+                      const hasSelectedInbox = inboxes.some((inbox) => inbox.id === selectedInbox?.id);
+
+                      return (
+                        <section
+                          key={group.id}
+                          className={cn(
+                            'rounded-[1rem] border border-border/30 bg-background/52 p-1.5 transition',
+                            hasSelectedInbox && 'border-primary/24 bg-primary/6',
+                          )}
+                        >
+                          <button
+                            className={cn(
+                              'relative flex w-full items-center justify-center rounded-[0.9rem] px-1 py-2.5 transition hover:bg-accent/65',
+                              hasSelectedInbox && 'bg-accent/55',
+                            )}
+                            title={group.name}
+                            type="button"
+                            onClick={() => void actions.setGroupCollapsed(group.id, !group.collapsed)}
+                          >
+                            <span className="flex h-10 w-10 items-center justify-center rounded-[0.95rem] border border-border/45 bg-card/82 text-primary shadow-sm">
+                              <GroupIcon className="text-lg" emoji={group.emoji} groupId={group.id} iconId={group.icon} />
+                            </span>
+                            <span className="pointer-events-none absolute bottom-1 left-1/2 flex h-4 w-4 -translate-x-1/2 items-center justify-center rounded-full bg-card/90 text-muted-foreground shadow-sm">
+                              <ChevronDown className={cn('h-3 w-3 transition-transform', group.collapsed && '-rotate-90')} />
+                            </span>
+                            {unreadIndicator ? (
+                              unreadIndicator === '•' ? (
+                                <span className="absolute right-1 top-1 h-3 w-3 rounded-full bg-primary shadow-[0_0_0_2px_hsl(var(--card))]" />
+                              ) : (
+                                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-5 items-center justify-center rounded-full border border-primary/16 bg-primary-foreground px-1 py-0.5 text-[9px] font-semibold text-primary shadow-sm">
+                                  {unreadIndicator}
+                                </span>
+                              )
+                            ) : null}
+                          </button>
+
+                          {!group.collapsed ? (
+                            <div className="mt-1.5 space-y-1.5 border-t border-border/25 pt-1.5">
+                              {inboxes.map((inbox) => (
+                                <div
+                                  key={inbox.id}
+                                  ref={(node) => {
+                                    if (node) {
+                                      rowRefs.current.set(inbox.id, node);
+                                    } else {
+                                      rowRefs.current.delete(inbox.id);
+                                      rowTopsRef.current.delete(inbox.id);
+                                    }
+                                  }}
+                                  className="will-change-transform"
+                                >
+                                  <InboxRow
+                                    active={selectedInbox?.id === inbox.id}
+                                    collapsed
+                                    dragEnabled={false}
+                                    dragOver={false}
+                                    dragging={false}
+                                    inbox={inbox}
+                                    onOpenExternal={() => void actions.openInboxExternal(inbox.id)}
+                                    onRemove={() => {
+                                      setSidebarCollapsed(false);
+                                      setPanelMode({ type: 'remove-inbox', inboxId: inbox.id });
+                                    }}
+                                    onRename={() => {
+                                      setSidebarCollapsed(false);
+                                      setPanelMode({ type: 'edit-inbox', inboxId: inbox.id });
+                                    }}
+                                    onResetIcon={() => {
+                                      void actions.clearInboxCustomIcon(inbox.id);
+                                      setSidebarNotice(null);
+                                    }}
+                                    onSelect={() => void actions.selectInbox(inbox.id)}
+                                    onOpenSleepSettings={() => setSleepDialogInboxId(inbox.id)}
+                                    onUploadIcon={() => {
+                                      setSidebarCollapsed(false);
+                                      setSidebarNotice(null);
+                                      setIconUploadTargetId(inbox.id);
+                                      fileInputRef.current?.click();
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    {renderedInboxes.map((inbox) => (
-                      <div
-                        key={inbox.id}
-                        ref={(node) => {
-                          if (node) {
-                            rowRefs.current.set(inbox.id, node);
-                          } else {
-                            rowRefs.current.delete(inbox.id);
-                            rowTopsRef.current.delete(inbox.id);
-                          }
-                        }}
-                        className="will-change-transform"
-                      >
-                        <InboxRow
-                          active={selectedInbox?.id === inbox.id}
-                          collapsed={sidebarCollapsed}
-                          dragOver={dragOverInboxId === inbox.id && draggedInboxId !== inbox.id}
-                          dragging={draggedInboxId === inbox.id}
-                          inbox={inbox}
-                          onDragEnd={() => {
-                            setDraggedInboxId(null);
-                            setDragOverInboxId(null);
+                    {renderedGroupSections.map(({ group, inboxes }) => {
+                      const unreadIndicator = getGroupUnreadIndicator(inboxes);
+                      const isDefaultGroup = group.id === DEFAULT_MAILBOX_GROUP_ID;
 
-                            if (reorderCommittedRef.current) {
-                              return;
+                      return (
+                        <section
+                          key={group.id}
+                          ref={(node) => {
+                            if (node) {
+                              groupSectionRefs.current.set(group.id, node);
+                            } else {
+                              groupSectionRefs.current.delete(group.id);
                             }
-
-                            setPreviewInboxOrderIds(null);
                           }}
-                          onDragOver={(event) => {
-                            event.preventDefault();
+                          className={cn(
+                            'rounded-[1rem] border border-border/30 bg-background/52 p-2.5 transition',
+                            dragOverGroupId === group.id && 'border-primary/28 bg-primary/6',
+                            draggedGroupId === group.id && 'opacity-70',
+                          )}
+                        >
+                          <div className="flex items-center gap-2 rounded-xl px-1.5 py-1">
+                            <button
+                              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-accent/65"
+                              type="button"
+                              onClick={() => void actions.setGroupCollapsed(group.id, !group.collapsed)}
+                            >
+                              <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
+                                <ChevronDown className={cn('h-4 w-4 transition-transform', group.collapsed && '-rotate-90')} />
+                              </span>
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <GroupIcon className="shrink-0 text-[15px]" emoji={group.emoji} groupId={group.id} iconId={group.icon} />
+                                <span className="truncate text-sm font-semibold tracking-tight">{group.name}</span>
+                              </span>
+                            </button>
 
-                            if (!draggedInboxId || draggedInboxId === inbox.id) {
-                              return;
-                            }
+                            {unreadIndicator ? (
+                              unreadIndicator === '•' ? (
+                                <span className="mr-1 h-3 w-3 rounded-full bg-primary shadow-[0_0_0_2px_hsl(var(--card))]" />
+                              ) : (
+                                <Badge className="min-w-9 justify-center border border-primary/16 bg-primary-foreground px-2.5 text-[11px] text-primary shadow-none">
+                                  {unreadIndicator}
+                                </Badge>
+                              )
+                            ) : null}
 
-                            const bounds = event.currentTarget.getBoundingClientRect();
-                            const placement: DragPlacement = event.clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before';
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button className="h-9 w-9 rounded-md px-0" size="icon" type="button" variant="ghost">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Group actions</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setGroupSortOpen(true);
+                                    setSidebarNotice(null);
+                                  }}
+                                >
+                                  Sort Groups
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setPanelMode({ type: 'rename-group', groupId: group.id });
+                                    setSidebarNotice(null);
+                                  }}
+                                >
+                                  Edit Group
+                                </DropdownMenuItem>
+                                {!isDefaultGroup ? (
+                                  <DropdownMenuItem
+                                    className="text-danger focus:text-danger"
+                                    onSelect={() => {
+                                      setPanelMode({ type: 'remove-group', groupId: group.id });
+                                      setSidebarNotice(null);
+                                    }}
+                                  >
+                                    Remove Group
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
 
-                            setDragOverInboxId(inbox.id);
-                            setPreviewInboxOrderIds((currentInboxOrderIds) => {
-                              const baseInboxOrderIds = currentInboxOrderIds ?? actualInboxOrderIds;
-                              const nextInboxOrderIds = reorderInboxIds(baseInboxOrderIds, draggedInboxId, inbox.id, placement);
-                              return nextInboxOrderIds.join('|') === (currentInboxOrderIds ?? actualInboxOrderIds).join('|')
-                                ? baseInboxOrderIds
-                                : nextInboxOrderIds;
-                            });
-                          }}
-                          onDragStart={(event) => {
-                            reorderCommittedRef.current = false;
-                            setDraggedInboxId(inbox.id);
-                            setPreviewInboxOrderIds(actualInboxOrderIds);
-                            event.dataTransfer.effectAllowed = 'move';
-                            event.dataTransfer.setData('text/plain', inbox.id);
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const sourceId = event.dataTransfer.getData('text/plain') || draggedInboxId;
-                            const baseInboxOrderIds = previewInboxOrderIds ?? actualInboxOrderIds;
-
-                            if (!sourceId) {
-                              setDraggedInboxId(null);
-                              setDragOverInboxId(null);
-                              setPreviewInboxOrderIds(null);
-                              return;
-                            }
-
-                            if (sourceId === inbox.id) {
-                              if (inboxOrderMatches(baseInboxOrderIds, actualInboxOrderIds)) {
-                                setDraggedInboxId(null);
-                                setDragOverInboxId(null);
-                                setPreviewInboxOrderIds(null);
-                                return;
-                              }
-
-                              reorderCommittedRef.current = true;
-                              setPreviewInboxOrderIds(baseInboxOrderIds);
-
-                              void handleReorder(baseInboxOrderIds).catch(() => {
-                                reorderCommittedRef.current = false;
-                                setPreviewInboxOrderIds(null);
-                              });
-
-                              return;
-                            }
-
-                            const bounds = event.currentTarget.getBoundingClientRect();
-                            const placement: DragPlacement = event.clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before';
-
-                            reorderCommittedRef.current = true;
-                            const nextInboxOrderIds = reorderInboxIds(baseInboxOrderIds, sourceId, inbox.id, placement);
-                            setPreviewInboxOrderIds(nextInboxOrderIds);
-
-                            void handleReorder(nextInboxOrderIds).catch(() => {
-                              reorderCommittedRef.current = false;
-                              setPreviewInboxOrderIds(null);
-                            });
-                          }}
-                          onOpenExternal={() => void actions.openInboxExternal(inbox.id)}
-                          onRemove={() => {
-                            setSidebarCollapsed(false);
-                            setPanelMode({ type: 'remove', inboxId: inbox.id });
-                          }}
-                          onRename={() => {
-                            setSidebarCollapsed(false);
-                            setPanelMode({ type: 'rename', inboxId: inbox.id });
-                          }}
-                          onResetIcon={() => {
-                            void actions.clearInboxCustomIcon(inbox.id);
-                            setSidebarNotice(null);
-                          }}
-                          onSelect={() => void actions.selectInbox(inbox.id)}
-                          onOpenSleepSettings={() => setSleepDialogInboxId(inbox.id)}
-                          onUploadIcon={() => {
-                            setSidebarCollapsed(false);
-                            setSidebarNotice(null);
-                            setIconUploadTargetId(inbox.id);
-                            fileInputRef.current?.click();
-                          }}
-                        />
-                      </div>
-                    ))}
+                          {!group.collapsed ? (
+                            <div className="mt-2 space-y-2">
+                              {inboxes.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-border/40 px-3 py-4 text-center text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                                  Drop inboxes here
+                                </div>
+                              ) : (
+                                inboxes.map((inbox) => (
+                                  <div
+                                    key={inbox.id}
+                                    ref={(node) => {
+                                      if (node) {
+                                        rowRefs.current.set(inbox.id, node);
+                                      } else {
+                                        rowRefs.current.delete(inbox.id);
+                                        rowTopsRef.current.delete(inbox.id);
+                                      }
+                                    }}
+                                    className="will-change-transform"
+                                  >
+                                    <InboxRow
+                                      active={selectedInbox?.id === inbox.id}
+                                      collapsed={false}
+                                      dragEnabled
+                                      dragOver={dragOverInboxId === inbox.id && draggedInboxId !== inbox.id}
+                                      dragging={draggedInboxId === inbox.id}
+                                      inbox={inbox}
+                                      onDragHandlePointerDown={(event) => beginInboxPointerDrag(event, inbox)}
+                                      onOpenExternal={() => void actions.openInboxExternal(inbox.id)}
+                                      onRemove={() => {
+                                        setSidebarCollapsed(false);
+                                        setPanelMode({ type: 'remove-inbox', inboxId: inbox.id });
+                                      }}
+                                      onRename={() => {
+                                        setSidebarCollapsed(false);
+                                        setPanelMode({ type: 'edit-inbox', inboxId: inbox.id });
+                                      }}
+                                      onResetIcon={() => {
+                                        void actions.clearInboxCustomIcon(inbox.id);
+                                        setSidebarNotice(null);
+                                      }}
+                                      onSelect={() => void actions.selectInbox(inbox.id)}
+                                      onOpenSleepSettings={() => setSleepDialogInboxId(inbox.id)}
+                                      onUploadIcon={() => {
+                                        setSidebarCollapsed(false);
+                                        setSidebarNotice(null);
+                                        setIconUploadTargetId(inbox.id);
+                                        fileInputRef.current?.click();
+                                      }}
+                                    />
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -696,6 +1281,23 @@ export function MailToasterShell() {
                       </Button>
                     ) : null}
 
+                    {!sidebarCollapsed ? (
+                      <Button
+                        className="h-10 w-10 rounded-md px-0"
+                        size="icon"
+                        type="button"
+                        title="Create group"
+                        variant="outline"
+                        onClick={() => {
+                          setPanelMode({ type: 'add-group' });
+                          setSidebarNotice(null);
+                        }}
+                      >
+                        <FolderPlus className="h-4 w-4" />
+                        <span className="sr-only">Create group</span>
+                      </Button>
+                    ) : null}
+
                     <div className="relative">
                       <Button
                         className="h-10 w-10 rounded-md px-0"
@@ -704,7 +1306,7 @@ export function MailToasterShell() {
                         title="Add inbox"
                         onClick={() => {
                           setSidebarCollapsed(false);
-                          setPanelMode({ type: 'add' });
+                          setPanelMode({ type: 'add-inbox' });
                           setSidebarNotice(null);
                         }}
                       >
@@ -753,8 +1355,10 @@ export function MailToasterShell() {
 
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[1rem] border border-border/30 bg-card/62 shadow-soft backdrop-blur-xl dark:border-border/65 dark:bg-card/54">
             <MailboxToolbar
+              actionsOpen={toolbarActionsOpen}
               inbox={selectedInbox ?? null}
               viewState={selectedViewState}
+              onActionsOpenChange={setToolbarActionsOpen}
               onBack={async () => {
                 if (selectedInbox) {
                   await actions.goBackInbox(selectedInbox.id);
@@ -778,6 +1382,39 @@ export function MailToasterShell() {
               onRefresh={async () => {
                 if (selectedInbox) {
                   await actions.reloadInbox(selectedInbox.id);
+                }
+              }}
+              onOpenExternal={() => {
+                if (selectedInbox) {
+                  void actions.openInboxExternal(selectedInbox.id);
+                }
+              }}
+              onOpenSleepSettings={() => {
+                if (selectedInbox) {
+                  setSleepDialogInboxId(selectedInbox.id);
+                }
+              }}
+              onRemove={() => {
+                if (selectedInbox) {
+                  setPanelMode({ type: 'remove-inbox', inboxId: selectedInbox.id });
+                }
+              }}
+              onRename={() => {
+                if (selectedInbox) {
+                  setPanelMode({ type: 'edit-inbox', inboxId: selectedInbox.id });
+                }
+              }}
+              onResetIcon={() => {
+                if (selectedInbox) {
+                  void actions.clearInboxCustomIcon(selectedInbox.id);
+                  setSidebarNotice(null);
+                }
+              }}
+              onUploadIcon={() => {
+                if (selectedInbox) {
+                  setSidebarNotice(null);
+                  setIconUploadTargetId(selectedInbox.id);
+                  fileInputRef.current?.click();
                 }
               }}
             />
@@ -828,6 +1465,55 @@ export function MailToasterShell() {
           </section>
         </div>
       </main>
+
+      {pointerDrag?.active ? (
+        pointerDrag.kind === 'inbox' ? (
+          <div
+            className="pointer-events-none fixed z-[80]"
+            style={{
+              left: pointerDrag.current.x - pointerDrag.offset.x,
+              top: pointerDrag.current.y - pointerDrag.offset.y,
+              width: pointerDrag.rect.width,
+            }}
+          >
+            <div className="rounded-xl border border-primary/24 bg-card/96 p-1.5 shadow-[0_20px_60px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
+              <div className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-2">
+                <MailboxAvatar
+                  provider={pointerDrag.inbox.provider}
+                  accountAvatarDataUrl={pointerDrag.inbox.accountAvatarDataUrl}
+                  customIconDataUrl={pointerDrag.inbox.customIconDataUrl}
+                  className="h-9 w-9 min-h-9 min-w-9"
+                  iconClassName="h-[18px] w-[18px]"
+                />
+                <div className="truncate text-sm font-medium">{pointerDrag.inbox.displayName}</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none fixed z-[80]"
+            style={{
+              left: pointerDrag.current.x - pointerDrag.offset.x,
+              top: pointerDrag.current.y - pointerDrag.offset.y,
+              width: pointerDrag.rect.width,
+            }}
+          >
+            <div className="rounded-[1rem] border border-primary/24 bg-card/96 p-2.5 shadow-[0_20px_60px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
+              <div className="flex items-center gap-2 rounded-xl px-1.5 py-1">
+                <span className="flex h-9 w-7 shrink-0 items-center justify-center text-muted-foreground/65">
+                  <GripVertical className="h-4 w-4" />
+                </span>
+                <div className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left">
+                  <span className="flex h-5 w-5 items-center justify-center text-primary">
+                    <GroupIcon className="shrink-0 text-[15px]" emoji={pointerDrag.emoji} groupId={pointerDrag.groupId} iconId={pointerDrag.icon} />
+                  </span>
+                  <span className="truncate text-sm font-semibold tracking-tight">{pointerDrag.name}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      ) : null}
     </>
   );
 }

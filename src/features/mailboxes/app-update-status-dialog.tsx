@@ -83,7 +83,7 @@ export function AppUpdateStatusDialog({ state, onInstall }: AppUpdateStatusDialo
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/70">
               {getDialogIcon(state)}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0">
               <DialogTitle>{getDialogTitle(state)}</DialogTitle>
               <DialogDescription>
                 Current version: {state.currentVersion}

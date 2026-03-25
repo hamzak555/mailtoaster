@@ -1,6 +1,6 @@
 # Mail Toaster
 
-Mail Toaster is a minimal macOS desktop shell for running multiple Gmail, Outlook, and Protonmail inboxes inside one Electron window. The UI is local; the actual mailbox experiences stay inside isolated Electron web contents with persistent per-inbox sessions.
+Mail Toaster is a minimal macOS desktop shell for running multiple Gmail, Outlook, Protonmail, and WhatsApp inboxes inside one Electron window. The UI is local; the actual mailbox experiences stay inside isolated Electron web contents with persistent per-inbox sessions.
 
 ## Stack
 - Electron

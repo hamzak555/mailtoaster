@@ -45,12 +45,12 @@ export function InboxSleepDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[32rem]">
-        <DialogHeader className="pb-4">
+        <DialogHeader className="pb-3">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/80 text-primary">
               <MoonStar className="h-5 w-5" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0">
               <DialogTitle>Sleep</DialogTitle>
               <DialogDescription>{inbox.displayName}</DialogDescription>
             </div>

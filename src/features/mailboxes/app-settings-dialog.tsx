@@ -23,7 +23,7 @@ export function AppSettingsDialog({
 }: AppSettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[34rem]">
+      <DialogContent className="max-w-[50rem]">
         <DialogHeader className="pb-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/80 text-primary">
@@ -35,7 +35,7 @@ export function AppSettingsDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           {APP_ACCENT_THEMES.map((theme) => {
             const selected = theme.id === accentThemeId;
 

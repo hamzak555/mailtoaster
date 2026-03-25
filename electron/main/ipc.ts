@@ -1,7 +1,16 @@
 import { ipcMain } from 'electron';
 
 import { type AppAccentThemeId } from '@shared/appearance';
-import { IPC_CHANNELS, type AppUpdateState, type CreateMailboxInput, type MailboxViewport } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  type AppUpdateState,
+  type CreateGroupInput,
+  type CreateMailboxInput,
+  type MailboxViewport,
+  type SaveSidebarLayoutInput,
+  type UpdateGroupInput,
+  type UpdateMailboxInput,
+} from '@shared/ipc';
 
 import { MailboxManager } from '../mailboxes/mailbox-manager';
 
@@ -32,6 +41,17 @@ export function registerIpcHandlers(provider: ManagerProvider): void {
     resolveManager(provider).setNativeOverlayVisible(visible),
   );
   ipcMain.handle(IPC_CHANNELS.createInbox, (_event, input: CreateMailboxInput) => resolveManager(provider).createInbox(input));
+  ipcMain.handle(IPC_CHANNELS.createGroup, (_event, input: CreateGroupInput) => resolveManager(provider).createGroup(input));
+  ipcMain.handle(IPC_CHANNELS.renameGroup, (_event, id: string, input: UpdateGroupInput) =>
+    resolveManager(provider).renameGroup(id, input),
+  );
+  ipcMain.handle(IPC_CHANNELS.removeGroup, (_event, id: string) => resolveManager(provider).removeGroup(id));
+  ipcMain.handle(IPC_CHANNELS.setGroupCollapsed, (_event, id: string, collapsed: boolean) =>
+    resolveManager(provider).setGroupCollapsed(id, collapsed),
+  );
+  ipcMain.handle(IPC_CHANNELS.saveSidebarLayout, (_event, input: SaveSidebarLayoutInput) =>
+    resolveManager(provider).saveSidebarLayout(input),
+  );
   ipcMain.handle(IPC_CHANNELS.reorderInboxes, (_event, orderedInboxIds: string[]) =>
     resolveManager(provider).reorderInboxes(orderedInboxIds),
   );
@@ -40,6 +60,9 @@ export function registerIpcHandlers(provider: ManagerProvider): void {
   );
   ipcMain.handle(IPC_CHANNELS.clearInboxCustomIcon, (_event, id: string) =>
     resolveManager(provider).clearInboxCustomIcon(id),
+  );
+  ipcMain.handle(IPC_CHANNELS.updateInbox, (_event, id: string, input: UpdateMailboxInput) =>
+    resolveManager(provider).updateInbox(id, input),
   );
   ipcMain.handle(IPC_CHANNELS.renameInbox, (_event, id: string, displayName: string) =>
     resolveManager(provider).renameInbox(id, displayName),

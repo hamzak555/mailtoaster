@@ -1,24 +1,86 @@
 import type { AppAppearanceSettings } from './appearance';
 
 export const APP_NAME = 'Mail Toaster';
+export const DEFAULT_MAILBOX_GROUP_ID = 'mailbox-group-inboxes';
+export const DEFAULT_MAILBOX_GROUP_NAME = 'Inboxes';
+export const DEFAULT_MAILBOX_GROUP_ICON_ID = 'folders';
+export const SYSTEM_MAILBOX_GROUP_ICON_ID = 'inbox';
+export const DEFAULT_MAILBOX_GROUP_EMOJI = '🗂️';
+export const SYSTEM_MAILBOX_GROUP_EMOJI = '📥';
 
-export const MAILBOX_PROVIDERS = ['gmail', 'outlook', 'protonmail'] as const;
+export const MAILBOX_PROVIDERS = ['gmail', 'outlook', 'protonmail', 'whatsapp'] as const;
+export const MAILBOX_GROUP_ICON_IDS = [
+  'folders',
+  'inbox',
+  'briefcase',
+  'building-2',
+  'users',
+  'message-circle',
+  'shopping-bag',
+  'receipt-text',
+  'megaphone',
+  'headphones',
+  'star',
+  'book-open',
+  'archive',
+  'badge-dollar-sign',
+  'bell',
+  'book-marked',
+  'calendar',
+  'camera',
+  'chart-column',
+  'chart-pie',
+  'clipboard-list',
+  'code-2',
+  'cog',
+  'file-text',
+  'flag',
+  'globe',
+  'heart',
+  'home',
+  'image',
+  'layout-grid',
+  'lightbulb',
+  'map-pinned',
+  'monitor',
+  'package',
+  'rocket',
+  'shield',
+  'store',
+  'tag',
+  'trending-up',
+  'wrench',
+] as const;
 export type MailboxProvider = (typeof MAILBOX_PROVIDERS)[number];
+export type MailboxGroupIconId = (typeof MAILBOX_GROUP_ICON_IDS)[number];
 export type MailboxSleepState = 'awake' | 'sleeping';
 export type MailboxSleepMode = 'manual' | 'inactivity';
 export type MailboxUnreadState = 'none' | 'dot' | 'count';
 export const AUTO_SLEEP_MINUTES_OPTIONS = [15, 30, 60, 120] as const;
 export type MailboxAutoSleepMinutes = (typeof AUTO_SLEEP_MINUTES_OPTIONS)[number];
 
+export interface MailboxGroup {
+  id: string;
+  name: string;
+  icon: MailboxGroupIconId;
+  emoji: string | null;
+  sortOrder: number;
+  collapsed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MailboxRecord {
   id: string;
   provider: MailboxProvider;
   displayName: string;
   targetUrl: string;
+  resumeUrl: string | null;
   icon: MailboxProvider;
   accountAvatarDataUrl: string | null;
   customIconDataUrl: string | null;
   partition: string;
+  groupId: string;
   sleepState: MailboxSleepState;
   sleepMode: MailboxSleepMode;
   sleepAfterMinutes: MailboxAutoSleepMinutes | null;
@@ -42,6 +104,7 @@ export interface PersistedMailboxNotificationState {
 
 export interface PersistedAppState {
   version: number;
+  groups: MailboxGroup[];
   inboxes: MailboxRecord[];
   selectedInboxId: string | null;
   windowBounds: PersistedWindowBounds | null;
@@ -55,6 +118,78 @@ export function isMailboxAutoSleepMinutes(value: unknown): value is MailboxAutoS
 
 export function isMailboxProvider(value: unknown): value is MailboxProvider {
   return typeof value === 'string' && MAILBOX_PROVIDERS.some((provider) => provider === value);
+}
+
+export function isMailboxGroupIconId(value: unknown): value is MailboxGroupIconId {
+  return typeof value === 'string' && MAILBOX_GROUP_ICON_IDS.some((iconId) => iconId === value);
+}
+
+export function getDefaultMailboxGroupIconId(groupId?: string): MailboxGroupIconId {
+  return groupId === DEFAULT_MAILBOX_GROUP_ID ? SYSTEM_MAILBOX_GROUP_ICON_ID : DEFAULT_MAILBOX_GROUP_ICON_ID;
+}
+
+export function normalizeMailboxGroupEmoji(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+const MAILBOX_GROUP_ICON_EMOJI_FALLBACKS: Record<MailboxGroupIconId, string> = {
+  folders: '🗂️',
+  inbox: '📥',
+  briefcase: '💼',
+  'building-2': '🏢',
+  users: '👥',
+  'message-circle': '💬',
+  'shopping-bag': '🛍️',
+  'receipt-text': '🧾',
+  megaphone: '📣',
+  headphones: '🎧',
+  star: '⭐',
+  'book-open': '📚',
+  archive: '🗄️',
+  'badge-dollar-sign': '💰',
+  bell: '🔔',
+  'book-marked': '📘',
+  calendar: '📅',
+  camera: '📸',
+  'chart-column': '📊',
+  'chart-pie': '📈',
+  'clipboard-list': '📋',
+  'code-2': '💻',
+  cog: '⚙️',
+  'file-text': '📄',
+  flag: '🚩',
+  globe: '🌍',
+  heart: '❤️',
+  home: '🏠',
+  image: '🖼️',
+  'layout-grid': '🔲',
+  lightbulb: '💡',
+  'map-pinned': '📍',
+  monitor: '🖥️',
+  package: '📦',
+  rocket: '🚀',
+  shield: '🛡️',
+  store: '🏪',
+  tag: '🏷️',
+  'trending-up': '📈',
+  wrench: '🔧',
+};
+
+export function getMailboxGroupEmojiFallback(groupId?: string, iconId?: MailboxGroupIconId): string {
+  if (groupId === DEFAULT_MAILBOX_GROUP_ID) {
+    return SYSTEM_MAILBOX_GROUP_EMOJI;
+  }
+
+  if (iconId && isMailboxGroupIconId(iconId)) {
+    return MAILBOX_GROUP_ICON_EMOJI_FALLBACKS[iconId];
+  }
+
+  return DEFAULT_MAILBOX_GROUP_EMOJI;
 }
 
 export function formatAutoSleepLabel(minutes: number): string {
@@ -74,6 +209,14 @@ export function compareMailboxes(left: MailboxRecord, right: MailboxRecord): num
   return left.createdAt.localeCompare(right.createdAt);
 }
 
+export function compareMailboxGroups(left: MailboxGroup, right: MailboxGroup): number {
+  if (left.sortOrder !== right.sortOrder) {
+    return left.sortOrder - right.sortOrder;
+  }
+
+  return left.createdAt.localeCompare(right.createdAt);
+}
+
 export function getProviderLabel(provider: MailboxProvider): string {
   switch (provider) {
     case 'gmail':
@@ -82,6 +225,8 @@ export function getProviderLabel(provider: MailboxProvider): string {
       return 'Outlook';
     case 'protonmail':
       return 'Protonmail';
+    case 'whatsapp':
+      return 'WhatsApp';
   }
 }
 

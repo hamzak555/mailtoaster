@@ -31,5 +31,9 @@ export function parseUnreadFromTitle(provider: MailboxProvider, title: string): 
     return { unreadState: 'dot', unreadCount: null };
   }
 
+  if (provider === 'whatsapp' && (/^[*•]/.test(title) || /\bunread\b/i.test(title))) {
+    return { unreadState: 'dot', unreadCount: null };
+  }
+
   return { unreadState: 'none', unreadCount: null };
 }

@@ -1,5 +1,5 @@
 import type { AppAccentThemeId, AppAppearanceSettings } from './appearance';
-import type { MailboxProvider, MailboxRecord } from './mailboxes';
+import type { MailboxGroup, MailboxProvider, MailboxRecord } from './mailboxes';
 
 export interface MailboxViewport {
   x: number;
@@ -9,6 +9,7 @@ export interface MailboxViewport {
 }
 
 export interface MailToasterState {
+  groups: MailboxGroup[];
   inboxes: MailboxRecord[];
   selectedInboxId: string | null;
   viewStates: Record<string, MailboxViewState>;
@@ -18,6 +19,31 @@ export interface MailToasterState {
 export interface CreateMailboxInput {
   provider: MailboxProvider;
   displayName?: string;
+  groupId?: string;
+}
+
+export interface UpdateMailboxInput {
+  displayName: string;
+  groupId: string;
+}
+
+export interface CreateGroupInput {
+  name: string;
+  emoji: string | null;
+}
+
+export interface UpdateGroupInput {
+  name: string;
+  emoji: string | null;
+}
+
+export interface SidebarGroupLayoutInput {
+  groupId: string;
+  inboxIds: string[];
+}
+
+export interface SaveSidebarLayoutInput {
+  groups: SidebarGroupLayoutInput[];
 }
 
 export interface MailboxViewState {
@@ -54,9 +80,15 @@ export interface MailToasterApi {
   setAccentTheme: (accentThemeId: AppAccentThemeId) => Promise<void>;
   setNativeOverlayVisible: (visible: boolean) => Promise<void>;
   createInbox: (input: CreateMailboxInput) => Promise<void>;
+  createGroup: (input: CreateGroupInput) => Promise<void>;
+  renameGroup: (id: string, input: UpdateGroupInput) => Promise<void>;
+  removeGroup: (id: string) => Promise<void>;
+  setGroupCollapsed: (id: string, collapsed: boolean) => Promise<void>;
+  saveSidebarLayout: (input: SaveSidebarLayoutInput) => Promise<void>;
   reorderInboxes: (orderedInboxIds: string[]) => Promise<void>;
   setInboxCustomIcon: (id: string, customIconDataUrl: string) => Promise<void>;
   clearInboxCustomIcon: (id: string) => Promise<void>;
+  updateInbox: (id: string, input: UpdateMailboxInput) => Promise<void>;
   renameInbox: (id: string, displayName: string) => Promise<void>;
   removeInbox: (id: string) => Promise<void>;
   selectInbox: (id: string) => Promise<void>;
@@ -81,9 +113,15 @@ export const IPC_CHANNELS = {
   setAccentTheme: 'mail-toaster:set-accent-theme',
   setNativeOverlayVisible: 'mail-toaster:set-native-overlay-visible',
   createInbox: 'mail-toaster:create-inbox',
+  createGroup: 'mail-toaster:create-group',
+  renameGroup: 'mail-toaster:rename-group',
+  removeGroup: 'mail-toaster:remove-group',
+  setGroupCollapsed: 'mail-toaster:set-group-collapsed',
+  saveSidebarLayout: 'mail-toaster:save-sidebar-layout',
   reorderInboxes: 'mail-toaster:reorder-inboxes',
   setInboxCustomIcon: 'mail-toaster:set-inbox-custom-icon',
   clearInboxCustomIcon: 'mail-toaster:clear-inbox-custom-icon',
+  updateInbox: 'mail-toaster:update-inbox',
   renameInbox: 'mail-toaster:rename-inbox',
   removeInbox: 'mail-toaster:remove-inbox',
   selectInbox: 'mail-toaster:select-inbox',

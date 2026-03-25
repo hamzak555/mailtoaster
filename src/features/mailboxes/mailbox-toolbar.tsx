@@ -10,26 +10,43 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+import { InboxActionsDropdown } from './inbox-actions-dropdown';
 import { MailboxAvatar } from './provider-presentation';
 
 interface MailboxToolbarProps {
   inbox: MailboxRecord | null;
+  actionsOpen?: boolean;
   viewState?: MailboxViewState;
   onBack: () => Promise<void>;
   onForward: () => Promise<void>;
   onRefresh: () => Promise<void>;
   onHome: () => Promise<void>;
   onNavigate: (url: string) => Promise<void>;
+  onActionsOpenChange?: (open: boolean) => void;
+  onRename: () => void;
+  onRemove: () => void;
+  onOpenSleepSettings: () => void;
+  onOpenExternal: () => void;
+  onUploadIcon: () => void;
+  onResetIcon: () => void;
 }
 
 export function MailboxToolbar({
   inbox,
+  actionsOpen,
   viewState,
   onBack,
   onForward,
   onRefresh,
   onHome,
   onNavigate,
+  onActionsOpenChange,
+  onRename,
+  onRemove,
+  onOpenSleepSettings,
+  onOpenExternal,
+  onUploadIcon,
+  onResetIcon,
 }: MailboxToolbarProps) {
   const [draftUrl, setDraftUrl] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -132,7 +149,7 @@ export function MailboxToolbar({
       </form>
 
       {inbox ? (
-        <div className="hidden items-center gap-2 rounded-lg border border-border/30 bg-card/78 px-2.5 py-1.5 md:flex">
+        <div className="hidden items-center gap-2 rounded-lg border border-border/30 bg-card/78 px-2 py-1.5 md:flex">
           <MailboxAvatar
             provider={inbox.provider}
             accountAvatarDataUrl={inbox.accountAvatarDataUrl}
@@ -143,6 +160,19 @@ export function MailboxToolbar({
           <div className="min-w-0">
             <div className="max-w-[9rem] truncate text-sm font-medium">{inbox.displayName}</div>
           </div>
+          <InboxActionsDropdown
+            inbox={inbox}
+            open={actionsOpen}
+            triggerClassName="app-no-drag h-8 w-8 rounded-md"
+            triggerVariant="ghost"
+            onOpenChange={onActionsOpenChange}
+            onOpenExternal={onOpenExternal}
+            onOpenSleepSettings={onOpenSleepSettings}
+            onRemove={onRemove}
+            onRename={onRename}
+            onResetIcon={onResetIcon}
+            onUploadIcon={onUploadIcon}
+          />
         </div>
       ) : null}
     </div>

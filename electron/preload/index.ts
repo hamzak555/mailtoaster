@@ -3,10 +3,14 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   IPC_CHANNELS,
   type AppUpdateState,
+  type CreateGroupInput,
   type CreateMailboxInput,
   type MailToasterApi,
   type MailToasterState,
   type MailboxViewport,
+  type SaveSidebarLayoutInput,
+  type UpdateGroupInput,
+  type UpdateMailboxInput,
 } from '@shared/ipc';
 import type { AppAccentThemeId } from '@shared/appearance';
 
@@ -41,11 +45,20 @@ const api: MailToasterApi = {
   setNativeOverlayVisible: (visible: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.setNativeOverlayVisible, visible) as Promise<void>,
   createInbox: (input: CreateMailboxInput) => ipcRenderer.invoke(IPC_CHANNELS.createInbox, input) as Promise<void>,
+  createGroup: (input: CreateGroupInput) => ipcRenderer.invoke(IPC_CHANNELS.createGroup, input) as Promise<void>,
+  renameGroup: (id: string, input: UpdateGroupInput) => ipcRenderer.invoke(IPC_CHANNELS.renameGroup, id, input) as Promise<void>,
+  removeGroup: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.removeGroup, id) as Promise<void>,
+  setGroupCollapsed: (id: string, collapsed: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setGroupCollapsed, id, collapsed) as Promise<void>,
+  saveSidebarLayout: (input: SaveSidebarLayoutInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveSidebarLayout, input) as Promise<void>,
   reorderInboxes: (orderedInboxIds: string[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.reorderInboxes, orderedInboxIds) as Promise<void>,
   setInboxCustomIcon: (id: string, customIconDataUrl: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.setInboxCustomIcon, id, customIconDataUrl) as Promise<void>,
   clearInboxCustomIcon: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.clearInboxCustomIcon, id) as Promise<void>,
+  updateInbox: (id: string, input: UpdateMailboxInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.updateInbox, id, input) as Promise<void>,
   renameInbox: (id: string, displayName: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.renameInbox, id, displayName) as Promise<void>,
   removeInbox: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.removeInbox, id) as Promise<void>,

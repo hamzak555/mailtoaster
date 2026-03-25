@@ -1,24 +1,50 @@
-import { app, BrowserWindow, Notification as ElectronNotification, type Rectangle, shell, type WebContents, WebContentsView } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Notification as ElectronNotification,
+  type Rectangle,
+  shell,
+  type WebContents,
+  WebContentsView,
+} from 'electron';
+import path from 'node:path';
 
 import { DEFAULT_APP_APPEARANCE_SETTINGS, isAppAccentThemeId, type AppAppearanceSettings, type AppAccentThemeId } from '@shared/appearance';
 import {
+  DEFAULT_MAILBOX_GROUP_ICON_ID,
+  DEFAULT_MAILBOX_GROUP_ID,
+  compareMailboxGroups,
   getAggregateUnreadCount,
+  getDefaultMailboxGroupIconId,
+  getMailboxGroupEmojiFallback,
   isMailboxAutoSleepMinutes,
+  isMailboxGroupIconId,
+  normalizeMailboxGroupEmoji,
   getDefaultDisplayName,
   getProviderLabel,
   compareMailboxes,
   hasAggregateUnreadDot,
+  type MailboxGroup,
   type PersistedMailboxNotificationState,
   type MailboxUnreadState,
   type MailboxProvider,
   type MailboxRecord,
 } from '@shared/mailboxes';
-import type { CreateMailboxInput, MailboxViewState, MailToasterState, MailboxViewport } from '@shared/ipc';
+import type {
+  CreateGroupInput,
+  CreateMailboxInput,
+  MailboxViewState,
+  MailToasterState,
+  MailboxViewport,
+  SaveSidebarLayoutInput,
+  UpdateGroupInput,
+  UpdateMailboxInput,
+} from '@shared/ipc';
 
 import { APP_NAME } from '@shared/mailboxes';
 
 import { AppStore } from '../persistence/app-store';
-import { getDefaultTargetUrl, isAllowedAvatarAssetUrl, isAllowedMailboxUrl } from './provider-config';
+import { getDefaultTargetUrl, isAllowedAvatarAssetUrl, isAllowedMailboxUrl, isResumableMailboxUrl } from './provider-config';
 import { parseUnreadFromTitle } from './unread';
 
 const MAILBOX_VIEW_BORDER_RADIUS = 16;
@@ -37,6 +63,94 @@ interface MailboxUnreadPreview {
   rowKey: string | null;
   secondaryRowKey: string | null;
   actionUrl: string | null;
+}
+
+interface BrowserIdentity {
+  acceptLanguages: string;
+  secChUa: string;
+  secChUaFullVersion: string;
+  secChUaFullVersionList: string;
+  secChUaMobile: string;
+  secChUaPlatform: string;
+  userAgent: string;
+}
+
+function canGoBack(webContents: WebContents): boolean {
+  return webContents.navigationHistory.canGoBack();
+}
+
+function canGoForward(webContents: WebContents): boolean {
+  return webContents.navigationHistory.canGoForward();
+}
+
+function getChromeVersion(): string {
+  return process.versions.chrome || '141.0.0.0';
+}
+
+function getChromeMajorVersion(): string {
+  return getChromeVersion().split('.')[0] || '141';
+}
+
+function getBrowserIdentityForPlatform(): BrowserIdentity {
+  const chromeVersion = getChromeVersion();
+  const chromeMajorVersion = getChromeMajorVersion();
+  const acceptLanguages = 'en-US,en';
+  const secChUa = `"Google Chrome";v="${chromeMajorVersion}", "Chromium";v="${chromeMajorVersion}", "Not_A Brand";v="24"`;
+  const secChUaFullVersion = `"${chromeVersion}"`;
+  const secChUaFullVersionList = `"Google Chrome";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not_A Brand";v="24.0.0.0"`;
+  const secChUaMobile = '?0';
+
+  switch (process.platform) {
+    case 'win32':
+      return {
+        acceptLanguages,
+        secChUa,
+        secChUaFullVersion,
+        secChUaFullVersionList,
+        secChUaMobile,
+        secChUaPlatform: '"Windows"',
+        userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`,
+      };
+    case 'linux':
+      return {
+        acceptLanguages,
+        secChUa,
+        secChUaFullVersion,
+        secChUaFullVersionList,
+        secChUaMobile,
+        secChUaPlatform: '"Linux"',
+        userAgent: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`,
+      };
+    case 'darwin':
+    default:
+      return {
+        acceptLanguages,
+        secChUa,
+        secChUaFullVersion,
+        secChUaFullVersionList,
+        secChUaMobile,
+        secChUaPlatform: '"macOS"',
+        userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`,
+      };
+  }
+}
+
+function getProviderBrowserIdentity(provider: MailboxProvider): BrowserIdentity | null {
+  if (provider !== 'whatsapp') {
+    return null;
+  }
+
+  return getBrowserIdentityForPlatform();
+}
+
+function setRequestHeader(headers: Record<string, string | string[]>, name: string, value: string): void {
+  const existingHeaderName = Object.keys(headers).find((headerName) => headerName.toLowerCase() === name.toLowerCase());
+
+  if (existingHeaderName) {
+    delete headers[existingHeaderName];
+  }
+
+  headers[name] = value;
 }
 
 function hasUnread({ unreadState, unreadCount }: MailboxUnreadSnapshot): boolean {
@@ -166,6 +280,8 @@ function isLikelyThreadView(provider: MailboxProvider, candidateUrl: string): bo
         return pathname.includes('/mail/id/') || pathname.includes('/mail/deeplink/read/');
       case 'protonmail':
         return pathname.split('/').filter(Boolean).length > 3;
+      case 'whatsapp':
+        return false;
     }
   } catch {
     return false;
@@ -240,6 +356,16 @@ function getUnreadPreviewDomConfig(provider: MailboxProvider) {
         keyAttributes: ['data-testid', 'data-element-id', 'data-message-id'],
         secondaryKeyAttributes: ['data-element-id', 'data-message-id'],
       };
+    case 'whatsapp':
+      return {
+        rowSelectors: [],
+        senderSelectors: [],
+        subjectSelectors: [],
+        previewSelectors: [],
+        linkSelectors: [],
+        keyAttributes: [],
+        secondaryKeyAttributes: [],
+      };
   }
 }
 
@@ -253,6 +379,7 @@ export class MailboxManager {
   private readonly unreadNotificationResetTimeouts = new Map<string, NodeJS.Timeout>();
   private readonly primedUnreadInboxIds = new Set<string>();
   private readonly unreadNotificationStateByInboxId: Map<string, PersistedMailboxNotificationState>;
+  private groups: MailboxGroup[];
   private inboxes: MailboxRecord[];
   private appearanceSettings: AppAppearanceSettings;
   private selectedInboxId: string | null;
@@ -266,7 +393,8 @@ export class MailboxManager {
   ) {
     const state = this.store.getState();
 
-    this.inboxes = [...state.inboxes].sort(compareMailboxes);
+    this.groups = [...state.groups].sort(compareMailboxGroups);
+    this.inboxes = [...state.inboxes];
     this.appearanceSettings = state.appearanceSettings ?? DEFAULT_APP_APPEARANCE_SETTINGS;
     this.selectedInboxId = this.resolveSelectedInbox(state.selectedInboxId);
     this.unreadNotificationStateByInboxId = new Map(
@@ -278,7 +406,7 @@ export class MailboxManager {
       this.viewStates.set(inbox.id, {
         canGoBack: false,
         canGoForward: false,
-        currentUrl: inbox.targetUrl,
+        currentUrl: inbox.resumeUrl ?? inbox.targetUrl,
         isLoading: false,
       });
     }
@@ -321,7 +449,8 @@ export class MailboxManager {
 
   getState(): MailToasterState {
     return {
-      inboxes: [...this.inboxes].sort(compareMailboxes),
+      groups: [...this.groups].sort(compareMailboxGroups),
+      inboxes: [...this.inboxes],
       selectedInboxId: this.selectedInboxId,
       viewStates: Object.fromEntries(this.viewStates.entries()),
       appearanceSettings: this.appearanceSettings,
@@ -353,21 +482,24 @@ export class MailboxManager {
 
   async createInbox(input: CreateMailboxInput): Promise<void> {
     const trimmedName = input.displayName?.trim();
+    const groupId = this.resolveGroupId(input.groupId);
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     const sameProviderCount = this.inboxes.filter((inbox) => inbox.provider === input.provider).length;
     const displayName = trimmedName && trimmedName.length > 0 ? trimmedName : getDefaultDisplayName(input.provider, sameProviderCount);
-    const sortOrder = this.inboxes.length === 0 ? 0 : Math.max(...this.inboxes.map((inbox) => inbox.sortOrder)) + 1;
+    const sortOrder = this.getInboxesForGroup(groupId).length;
 
     const mailbox: MailboxRecord = {
       id,
       provider: input.provider,
       displayName,
       targetUrl: getDefaultTargetUrl(input.provider),
+      resumeUrl: null,
       icon: input.provider,
       accountAvatarDataUrl: null,
       customIconDataUrl: null,
       partition: `persist:inbox-${id}`,
+      groupId,
       sleepState: 'awake',
       sleepMode: 'manual',
       sleepAfterMinutes: null,
@@ -378,17 +510,199 @@ export class MailboxManager {
       updatedAt: createdAt,
     };
 
-    this.inboxes = [...this.inboxes, mailbox].sort(compareMailboxes);
+    this.inboxes = [...this.inboxes, mailbox];
     this.viewStates.set(mailbox.id, {
       canGoBack: false,
       canGoForward: false,
-      currentUrl: mailbox.targetUrl,
+      currentUrl: mailbox.resumeUrl ?? mailbox.targetUrl,
       isLoading: true,
     });
     this.selectedInboxId = mailbox.id;
     this.ensureView(mailbox.id);
     this.persistState();
     this.attachSelectedView();
+    this.emitState();
+  }
+
+  async createGroup(input: CreateGroupInput): Promise<void> {
+    const trimmedName = input.name.trim();
+    const createdAt = new Date().toISOString();
+    const group: MailboxGroup = {
+      id: crypto.randomUUID(),
+      name: trimmedName || this.getNextGroupName(),
+      icon: DEFAULT_MAILBOX_GROUP_ICON_ID,
+      emoji: normalizeMailboxGroupEmoji(input.emoji) ?? getMailboxGroupEmojiFallback(undefined, DEFAULT_MAILBOX_GROUP_ICON_ID),
+      sortOrder: this.groups.length,
+      collapsed: false,
+      createdAt,
+      updatedAt: createdAt,
+    };
+
+    this.groups = [...this.groups, group].sort(compareMailboxGroups);
+    this.persistState();
+    this.emitState();
+  }
+
+  async renameGroup(id: string, input: UpdateGroupInput): Promise<void> {
+    const trimmedName = input.name.trim();
+
+    if (!trimmedName) {
+      throw new Error('Group name is required.');
+    }
+
+    this.updateGroup(id, (group) => ({
+      ...group,
+      name: trimmedName,
+      icon: isMailboxGroupIconId(group.icon) ? group.icon : getDefaultMailboxGroupIconId(group.id),
+      emoji: normalizeMailboxGroupEmoji(input.emoji) ?? getMailboxGroupEmojiFallback(group.id, group.icon),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    this.persistState();
+    this.emitState();
+  }
+
+  async removeGroup(id: string): Promise<void> {
+    if (id === DEFAULT_MAILBOX_GROUP_ID) {
+      return;
+    }
+
+    const group = this.findGroup(id);
+
+    if (!group) {
+      return;
+    }
+
+    const currentLayout = this.getCurrentSidebarLayout();
+    const groupToRemove = currentLayout.groups.find((entry) => entry.groupId === id);
+    const defaultGroup = currentLayout.groups.find((entry) => entry.groupId === DEFAULT_MAILBOX_GROUP_ID);
+
+    if (!groupToRemove || !defaultGroup) {
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextGroups = this.getOrderedGroups()
+      .filter((currentGroup) => currentGroup.id !== id)
+      .map((currentGroup, index) => ({
+        ...currentGroup,
+        sortOrder: index,
+        updatedAt: currentGroup.sortOrder !== index ? updatedAt : currentGroup.updatedAt,
+      }));
+    const nextGroupLayouts = currentLayout.groups
+      .filter((entry) => entry.groupId !== id)
+      .map((entry) =>
+        entry.groupId === DEFAULT_MAILBOX_GROUP_ID
+          ? {
+              ...entry,
+              inboxIds: [...entry.inboxIds, ...groupToRemove.inboxIds],
+            }
+          : entry,
+      );
+    const currentInboxById = new Map(this.inboxes.map((inbox) => [inbox.id, inbox]));
+
+    this.groups = nextGroups;
+    this.inboxes = nextGroupLayouts.flatMap((layout) =>
+      layout.inboxIds.map((inboxId, index) => {
+        const inbox = currentInboxById.get(inboxId)!;
+        const positionChanged = inbox.groupId !== layout.groupId || inbox.sortOrder !== index;
+
+        return {
+          ...inbox,
+          groupId: layout.groupId,
+          sortOrder: index,
+          updatedAt: positionChanged ? updatedAt : inbox.updatedAt,
+        };
+      }),
+    );
+
+    this.persistState();
+    this.emitState();
+  }
+
+  async setGroupCollapsed(id: string, collapsed: boolean): Promise<void> {
+    const group = this.findGroup(id);
+
+    if (!group || group.collapsed === collapsed) {
+      return;
+    }
+
+    this.updateGroup(id, (currentGroup) => ({
+      ...currentGroup,
+      collapsed,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    this.persistState();
+    this.emitState();
+  }
+
+  async saveSidebarLayout(input: SaveSidebarLayoutInput): Promise<void> {
+    if (!this.applySidebarLayout(input)) {
+      return;
+    }
+
+    this.persistState();
+    this.emitState();
+  }
+
+  async updateInbox(id: string, input: UpdateMailboxInput): Promise<void> {
+    const mailbox = this.findInbox(id);
+
+    if (!mailbox) {
+      return;
+    }
+
+    const trimmedName = input.displayName.trim();
+
+    if (!trimmedName) {
+      throw new Error('Display name is required.');
+    }
+
+    const nextGroupId = this.resolveGroupId(input.groupId);
+    let changed = false;
+
+    if (mailbox.groupId !== nextGroupId) {
+      const currentLayout = this.getCurrentSidebarLayout();
+      const nextLayout: SaveSidebarLayoutInput = {
+        groups: currentLayout.groups.map((group) => {
+          if (group.groupId === mailbox.groupId) {
+            return {
+              ...group,
+              inboxIds: group.inboxIds.filter((inboxId) => inboxId !== id),
+            };
+          }
+
+          if (group.groupId === nextGroupId) {
+            return {
+              ...group,
+              inboxIds: [...group.inboxIds, id],
+            };
+          }
+
+          return group;
+        }),
+      };
+
+      changed = this.applySidebarLayout(nextLayout) || changed;
+    }
+
+    const currentMailbox = this.findInbox(id);
+
+    if (currentMailbox && currentMailbox.displayName !== trimmedName) {
+      this.mutateInbox(id, (nextMailbox) => ({
+        ...nextMailbox,
+        displayName: trimmedName,
+        updatedAt: new Date().toISOString(),
+      }));
+      changed = true;
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    this.persistState();
     this.emitState();
   }
 
@@ -399,7 +713,7 @@ export class MailboxManager {
       throw new Error('Display name is required.');
     }
 
-    this.updateInbox(id, (mailbox) => ({
+    this.mutateInbox(id, (mailbox) => ({
       ...mailbox,
       displayName: trimmedName,
       updatedAt: new Date().toISOString(),
@@ -414,7 +728,7 @@ export class MailboxManager {
       throw new Error('Unsupported image format.');
     }
 
-    this.updateInbox(id, (mailbox) => ({
+    this.mutateInbox(id, (mailbox) => ({
       ...mailbox,
       customIconDataUrl,
       updatedAt: new Date().toISOString(),
@@ -425,7 +739,7 @@ export class MailboxManager {
   }
 
   async clearInboxCustomIcon(id: string): Promise<void> {
-    this.updateInbox(id, (mailbox) => ({
+    this.mutateInbox(id, (mailbox) => ({
       ...mailbox,
       customIconDataUrl: null,
       updatedAt: new Date().toISOString(),
@@ -436,40 +750,18 @@ export class MailboxManager {
   }
 
   async reorderInboxes(orderedInboxIds: string[]): Promise<void> {
-    const nextInboxIds = [...new Set(orderedInboxIds)];
-
-    if (nextInboxIds.length !== this.inboxes.length) {
+    if (this.groups.length !== 1) {
       return;
     }
 
-    const inboxById = new Map(this.inboxes.map((inbox) => [inbox.id, inbox]));
-
-    if (nextInboxIds.some((inboxId) => !inboxById.has(inboxId))) {
-      return;
-    }
-
-    const currentOrderKey = this.inboxes.map((inbox) => inbox.id).join('|');
-    const nextOrderKey = nextInboxIds.join('|');
-
-    if (currentOrderKey === nextOrderKey) {
-      return;
-    }
-
-    const reorderedAt = new Date().toISOString();
-
-    this.inboxes = nextInboxIds.map((inboxId, index) => {
-      const inbox = inboxById.get(inboxId)!;
-      const sortChanged = inbox.sortOrder !== index;
-
-      return {
-        ...inbox,
-        sortOrder: index,
-        updatedAt: sortChanged ? reorderedAt : inbox.updatedAt,
-      };
+    await this.saveSidebarLayout({
+      groups: [
+        {
+          groupId: this.groups[0]!.id,
+          inboxIds: orderedInboxIds,
+        },
+      ],
     });
-
-    this.persistState();
-    this.emitState();
   }
 
   async removeInbox(id: string): Promise<void> {
@@ -484,15 +776,11 @@ export class MailboxManager {
     this.destroyView(id);
     this.avatarSourceUrls.delete(id);
     this.viewStates.delete(id);
-    this.inboxes = remainingInboxes
-      .sort(compareMailboxes)
-      .map((inbox, index) => ({
-        ...inbox,
-        sortOrder: index,
-      }));
+    this.inboxes = remainingInboxes;
+    this.applySidebarLayout(this.getCurrentSidebarLayout());
 
     if (this.selectedInboxId === id) {
-      this.selectedInboxId = this.inboxes[0]?.id ?? null;
+      this.selectedInboxId = this.getFirstInboxId();
     }
 
     this.persistState();
@@ -528,7 +816,7 @@ export class MailboxManager {
       return;
     }
 
-    this.updateInbox(id, (currentMailbox) => ({
+    this.mutateInbox(id, (currentMailbox) => ({
       ...currentMailbox,
       sleepState: 'sleeping',
       updatedAt: new Date().toISOString(),
@@ -558,7 +846,7 @@ export class MailboxManager {
       return;
     }
 
-    this.updateInbox(id, (currentMailbox) => ({
+    this.mutateInbox(id, (currentMailbox) => ({
       ...currentMailbox,
       sleepMode: nextSleepMode,
       sleepAfterMinutes: minutes,
@@ -577,7 +865,7 @@ export class MailboxManager {
       return;
     }
 
-    this.updateInbox(id, (currentMailbox) => ({
+    this.mutateInbox(id, (currentMailbox) => ({
       ...currentMailbox,
       sleepState: 'awake',
       updatedAt: new Date().toISOString(),
@@ -601,7 +889,7 @@ export class MailboxManager {
   async goBackInbox(id: string): Promise<void> {
     const view = this.getActiveView(id);
 
-    if (view?.webContents.canGoBack()) {
+    if (view && canGoBack(view.webContents)) {
       this.recordMailboxActivity(id);
       view.webContents.goBack();
     }
@@ -610,7 +898,7 @@ export class MailboxManager {
   async goForwardInbox(id: string): Promise<void> {
     const view = this.getActiveView(id);
 
-    if (view?.webContents.canGoForward()) {
+    if (view && canGoForward(view.webContents)) {
       this.recordMailboxActivity(id);
       view.webContents.goForward();
     }
@@ -666,8 +954,8 @@ export class MailboxManager {
     this.recordMailboxActivity(id);
 
     this.syncViewState(id, {
-      canGoBack: view.webContents.canGoBack(),
-      canGoForward: view.webContents.canGoForward(),
+      canGoBack: canGoBack(view.webContents),
+      canGoForward: canGoForward(view.webContents),
       currentUrl: nextUrl,
       isLoading: true,
     });
@@ -693,15 +981,66 @@ export class MailboxManager {
       return candidateId;
     }
 
-    return this.inboxes[0]?.id ?? null;
+    return this.getFirstInboxId();
   }
 
   private getSelectedInbox(): MailboxRecord | undefined {
     return this.selectedInboxId ? this.findInbox(this.selectedInboxId) : undefined;
   }
 
+  private getStartupUrl(mailbox: MailboxRecord): string {
+    return mailbox.resumeUrl && isResumableMailboxUrl(mailbox.provider, mailbox.resumeUrl) ? mailbox.resumeUrl : mailbox.targetUrl;
+  }
+
+  private getFirstInboxId(): string | null {
+    for (const group of this.getOrderedGroups()) {
+      const firstInboxId = this.getInboxesForGroup(group.id)[0]?.id;
+
+      if (firstInboxId) {
+        return firstInboxId;
+      }
+    }
+
+    return null;
+  }
+
+  private findGroup(id: string): MailboxGroup | undefined {
+    return this.groups.find((group) => group.id === id);
+  }
+
   private findInbox(id: string): MailboxRecord | undefined {
     return this.inboxes.find((inbox) => inbox.id === id);
+  }
+
+  private getMailboxIdForWebContents(sender: WebContents): string | null {
+    for (const [mailboxId, view] of this.views.entries()) {
+      if (view.webContents === sender || view.webContents.id === sender.id) {
+        return mailboxId;
+      }
+    }
+
+    return null;
+  }
+
+  private getOrderedGroups(): MailboxGroup[] {
+    return [...this.groups].sort(compareMailboxGroups);
+  }
+
+  private getInboxesForGroup(groupId: string): MailboxRecord[] {
+    return this.inboxes.filter((inbox) => inbox.groupId === groupId).sort(compareMailboxes);
+  }
+
+  private resolveGroupId(candidateId?: string | null): string {
+    if (candidateId && this.groups.some((group) => group.id === candidateId)) {
+      return candidateId;
+    }
+
+    return DEFAULT_MAILBOX_GROUP_ID;
+  }
+
+  private getNextGroupName(): string {
+    const customGroupCount = this.groups.filter((group) => group.id !== DEFAULT_MAILBOX_GROUP_ID).length;
+    return `Group ${customGroupCount + 1}`;
   }
 
   private getActiveView(id: string): WebContentsView | undefined {
@@ -714,10 +1053,87 @@ export class MailboxManager {
     return this.ensureView(id);
   }
 
-  private updateInbox(id: string, updater: (mailbox: MailboxRecord) => MailboxRecord): void {
-    this.inboxes = this.inboxes
-      .map((mailbox) => (mailbox.id === id ? updater(mailbox) : mailbox))
-      .sort(compareMailboxes);
+  private mutateInbox(id: string, updater: (mailbox: MailboxRecord) => MailboxRecord): void {
+    this.inboxes = this.inboxes.map((mailbox) => (mailbox.id === id ? updater(mailbox) : mailbox));
+  }
+
+  private updateGroup(id: string, updater: (group: MailboxGroup) => MailboxGroup): void {
+    this.groups = this.groups.map((group) => (group.id === id ? updater(group) : group)).sort(compareMailboxGroups);
+  }
+
+  private getCurrentSidebarLayout(): SaveSidebarLayoutInput {
+    return {
+      groups: this.getOrderedGroups().map((group) => ({
+        groupId: group.id,
+        inboxIds: this.getInboxesForGroup(group.id).map((inbox) => inbox.id),
+      })),
+    };
+  }
+
+  private applySidebarLayout(input: SaveSidebarLayoutInput): boolean {
+    const nextGroupLayouts = input.groups.map((group) => ({
+      groupId: group.groupId,
+      inboxIds: [...new Set(group.inboxIds)],
+    }));
+
+    if (nextGroupLayouts.length !== this.groups.length) {
+      return false;
+    }
+
+    const currentGroupById = new Map(this.groups.map((group) => [group.id, group]));
+    const currentInboxById = new Map(this.inboxes.map((inbox) => [inbox.id, inbox]));
+
+    if (nextGroupLayouts.some((group) => !currentGroupById.has(group.groupId))) {
+      return false;
+    }
+
+    const nextGroupIds = nextGroupLayouts.map((group) => group.groupId);
+
+    if (new Set(nextGroupIds).size !== nextGroupIds.length) {
+      return false;
+    }
+
+    const nextInboxIds = nextGroupLayouts.flatMap((group) => group.inboxIds);
+
+    if (nextInboxIds.length !== this.inboxes.length || new Set(nextInboxIds).size !== nextInboxIds.length) {
+      return false;
+    }
+
+    if (nextInboxIds.some((inboxId) => !currentInboxById.has(inboxId))) {
+      return false;
+    }
+
+    const updatedAt = new Date().toISOString();
+    let changed = false;
+
+    this.groups = nextGroupLayouts.map((layout, index) => {
+      const currentGroup = currentGroupById.get(layout.groupId)!;
+      const sortChanged = currentGroup.sortOrder !== index;
+      changed = changed || sortChanged;
+
+      return {
+        ...currentGroup,
+        sortOrder: index,
+        updatedAt: sortChanged ? updatedAt : currentGroup.updatedAt,
+      };
+    });
+
+    this.inboxes = nextGroupLayouts.flatMap((layout) =>
+      layout.inboxIds.map((inboxId, index) => {
+        const currentInbox = currentInboxById.get(inboxId)!;
+        const positionChanged = currentInbox.groupId !== layout.groupId || currentInbox.sortOrder !== index;
+        changed = changed || positionChanged;
+
+        return {
+          ...currentInbox,
+          groupId: layout.groupId,
+          sortOrder: index,
+          updatedAt: positionChanged ? updatedAt : currentInbox.updatedAt,
+        };
+      }),
+    );
+
+    return changed;
   }
 
   private clearAutoSleepTimer(mailboxId: string): void {
@@ -755,8 +1171,27 @@ export class MailboxManager {
     this.syncAutoSleepTimer(mailboxId);
   }
 
+  private persistResumeUrl(mailboxId: string, provider: MailboxProvider, candidateUrl: string): void {
+    if (!isResumableMailboxUrl(provider, candidateUrl)) {
+      return;
+    }
+
+    const mailbox = this.findInbox(mailboxId);
+
+    if (!mailbox || mailbox.resumeUrl === candidateUrl) {
+      return;
+    }
+
+    this.mutateInbox(mailboxId, (currentMailbox) => ({
+      ...currentMailbox,
+      resumeUrl: candidateUrl,
+    }));
+    this.persistState();
+  }
+
   private persistState(): void {
     this.store.saveMailboxState(
+      this.groups,
       this.inboxes,
       this.selectedInboxId,
       this.getPersistedNotificationState(),
@@ -880,14 +1315,23 @@ export class MailboxManager {
     view.setBorderRadius(MAILBOX_VIEW_BORDER_RADIUS);
     this.configureView(view, mailbox.id, mailbox.provider);
     this.views.set(mailbox.id, view);
+    const browserIdentity = getProviderBrowserIdentity(mailbox.provider);
+    const startupUrl = this.getStartupUrl(mailbox);
     this.syncViewState(mailbox.id, {
       canGoBack: false,
       canGoForward: false,
-      currentUrl: mailbox.targetUrl,
+      currentUrl: startupUrl,
       isLoading: true,
     });
     this.syncViewPerformanceModes();
-    void view.webContents.loadURL(mailbox.targetUrl);
+    void view.webContents.loadURL(
+      startupUrl,
+      browserIdentity
+        ? {
+            userAgent: browserIdentity.userAgent,
+          }
+        : undefined,
+    );
 
     return view;
   }
@@ -895,7 +1339,12 @@ export class MailboxManager {
   private configureView(view: WebContentsView, mailboxId: string, provider: MailboxProvider): void {
     const { webContents } = view;
 
-    this.configurePartition(webContents, mailboxId);
+    this.configurePartition(webContents, mailboxId, provider);
+    const browserIdentity = getProviderBrowserIdentity(provider);
+
+    if (browserIdentity) {
+      webContents.setUserAgent(browserIdentity.userAgent, browserIdentity.acceptLanguages);
+    }
 
     webContents.setWindowOpenHandler(({ url }) => {
       void shell.openExternal(url);
@@ -921,17 +1370,20 @@ export class MailboxManager {
 
     webContents.on('did-stop-loading', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.persistResumeUrl(mailboxId, provider, webContents.getURL());
       this.applyUnreadState(mailboxId, provider, webContents.getTitle());
       void this.syncAccountAvatar(mailboxId, provider, webContents);
     });
 
     webContents.on('did-navigate', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.persistResumeUrl(mailboxId, provider, webContents.getURL());
       this.recordMailboxActivity(mailboxId);
     });
 
     webContents.on('did-navigate-in-page', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.persistResumeUrl(mailboxId, provider, webContents.getURL());
       this.recordMailboxActivity(mailboxId);
     });
 
@@ -941,6 +1393,7 @@ export class MailboxManager {
 
     webContents.on('did-finish-load', () => {
       this.syncViewStateFromWebContents(mailboxId, webContents);
+      this.persistResumeUrl(mailboxId, provider, webContents.getURL());
       this.applyUnreadState(mailboxId, provider, webContents.getTitle());
       void this.syncAccountAvatar(mailboxId, provider, webContents);
       setTimeout(() => {
@@ -963,7 +1416,7 @@ export class MailboxManager {
     });
   }
 
-  private configurePartition(webContents: WebContents, mailboxId: string): void {
+  private configurePartition(webContents: WebContents, mailboxId: string, provider: MailboxProvider): void {
     const { session } = webContents;
     const mailbox = this.findInbox(mailboxId);
 
@@ -976,6 +1429,32 @@ export class MailboxManager {
     });
 
     session.setPermissionCheckHandler(() => false);
+
+    if (provider === 'whatsapp') {
+      const browserIdentity = getProviderBrowserIdentity(provider);
+
+      if (browserIdentity) {
+        session.setUserAgent(browserIdentity.userAgent, browserIdentity.acceptLanguages);
+        void session.clearCache().catch(() => undefined);
+        session.registerPreloadScript({
+          filePath: path.join(__dirname, '..', 'mailboxes', 'whatsapp-preload.js'),
+          type: 'frame',
+        });
+        session.webRequest.onBeforeSendHeaders({ urls: ['https://web.whatsapp.com/*'] }, (details, callback) => {
+          const requestHeaders = { ...details.requestHeaders };
+
+          setRequestHeader(requestHeaders, 'User-Agent', browserIdentity.userAgent);
+          setRequestHeader(requestHeaders, 'Accept-Language', browserIdentity.acceptLanguages);
+          setRequestHeader(requestHeaders, 'Sec-CH-UA', browserIdentity.secChUa);
+          setRequestHeader(requestHeaders, 'Sec-CH-UA-Full-Version', browserIdentity.secChUaFullVersion);
+          setRequestHeader(requestHeaders, 'Sec-CH-UA-Full-Version-List', browserIdentity.secChUaFullVersionList);
+          setRequestHeader(requestHeaders, 'Sec-CH-UA-Mobile', browserIdentity.secChUaMobile);
+          setRequestHeader(requestHeaders, 'Sec-CH-UA-Platform', browserIdentity.secChUaPlatform);
+          callback({ requestHeaders });
+        });
+      }
+    }
+
     this.configuredPartitions.add(mailbox.partition);
   }
 
@@ -1032,7 +1511,7 @@ export class MailboxManager {
       (shouldNotifyForUnreadChange(previousUnreadState, nextUnreadState) || shouldProbeStableUnread);
 
     if (!unreadStateUnchanged) {
-      this.updateInbox(mailboxId, (currentMailbox) => ({
+      this.mutateInbox(mailboxId, (currentMailbox) => ({
         ...currentMailbox,
         unreadState: nextUnreadState.unreadState,
         unreadCount: nextUnreadState.unreadCount,
@@ -1079,14 +1558,18 @@ export class MailboxManager {
     }
 
     this.syncViewState(mailboxId, {
-      canGoBack: webContents.canGoBack(),
-      canGoForward: webContents.canGoForward(),
+      canGoBack: canGoBack(webContents),
+      canGoForward: canGoForward(webContents),
       currentUrl: webContents.getURL() || mailbox.targetUrl,
       isLoading: webContents.isLoading(),
     });
   }
 
   private async syncAccountAvatar(mailboxId: string, provider: MailboxProvider, webContents: WebContents): Promise<void> {
+    if (provider === 'whatsapp') {
+      return;
+    }
+
     if (webContents.isDestroyed()) {
       return;
     }
@@ -1124,7 +1607,7 @@ export class MailboxManager {
       const dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
 
       this.avatarSourceUrls.set(mailboxId, avatarUrl);
-      this.updateInbox(mailboxId, (currentMailbox) => ({
+      this.mutateInbox(mailboxId, (currentMailbox) => ({
         ...currentMailbox,
         accountAvatarDataUrl: dataUrl,
         updatedAt: new Date().toISOString(),

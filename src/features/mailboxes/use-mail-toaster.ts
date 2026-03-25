@@ -4,9 +4,18 @@ import { startTransition, useEffect, useEffectEvent, useMemo, useState } from 'r
 
 import { DEFAULT_APP_APPEARANCE_SETTINGS, type AppAccentThemeId } from '@shared/appearance';
 import type { MailboxRecord } from '@shared/mailboxes';
-import type { CreateMailboxInput, MailToasterState, MailboxViewport } from '@shared/ipc';
+import type {
+  CreateGroupInput,
+  CreateMailboxInput,
+  MailToasterState,
+  MailboxViewport,
+  SaveSidebarLayoutInput,
+  UpdateGroupInput,
+  UpdateMailboxInput,
+} from '@shared/ipc';
 
 const EMPTY_STATE: MailToasterState = {
+  groups: [],
   inboxes: [],
   selectedInboxId: null,
   viewStates: {},
@@ -84,6 +93,21 @@ export function useMailToaster() {
       createInbox: async (input: CreateMailboxInput) => {
         await getApi().createInbox(input);
       },
+      createGroup: async (input: CreateGroupInput) => {
+        await getApi().createGroup(input);
+      },
+      renameGroup: async (id: string, input: UpdateGroupInput) => {
+        await getApi().renameGroup(id, input);
+      },
+      removeGroup: async (id: string) => {
+        await getApi().removeGroup(id);
+      },
+      setGroupCollapsed: async (id: string, collapsed: boolean) => {
+        await getApi().setGroupCollapsed(id, collapsed);
+      },
+      saveSidebarLayout: async (input: SaveSidebarLayoutInput) => {
+        await getApi().saveSidebarLayout(input);
+      },
       reorderInboxes: async (orderedInboxIds: string[]) => {
         await getApi().reorderInboxes(orderedInboxIds);
       },
@@ -92,6 +116,9 @@ export function useMailToaster() {
       },
       clearInboxCustomIcon: async (id: string) => {
         await getApi().clearInboxCustomIcon(id);
+      },
+      updateInbox: async (id: string, input: UpdateMailboxInput) => {
+        await getApi().updateInbox(id, input);
       },
       renameInbox: async (id: string, displayName: string) => {
         await getApi().renameInbox(id, displayName);

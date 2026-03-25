@@ -3,6 +3,7 @@ import { getProviderLabel, type MailboxProvider } from '@shared/mailboxes';
 import { GmailIcon } from '@/components/icons/gmail-icon';
 import { OutlookIcon } from '@/components/icons/outlook-icon';
 import { ProtonmailIcon } from '@/components/icons/protonmail-icon';
+import { WhatsappIcon } from '@/components/icons/whatsapp-icon';
 import { cn } from '@/lib/utils';
 
 export function ProviderIcon({ provider, className }: { provider: MailboxProvider; className?: string }) {
@@ -13,6 +14,8 @@ export function ProviderIcon({ provider, className }: { provider: MailboxProvide
       return <OutlookIcon className={className} />;
     case 'protonmail':
       return <ProtonmailIcon className={className} />;
+    case 'whatsapp':
+      return <WhatsappIcon className={className} />;
   }
 }
 
@@ -34,8 +37,8 @@ export function MailboxAvatar({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary',
-        displayImage && 'border-2 border-primary/30 bg-card/80 shadow-[0_0_0_1px_hsl(var(--background)/0.55)]',
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-primary/30 shadow-[0_0_0_1px_hsl(var(--background)/0.55)]',
+        displayImage ? 'bg-card/80' : 'bg-secondary',
         className,
       )}
     >

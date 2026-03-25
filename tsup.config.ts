@@ -2,6 +2,7 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig({
   entry: {
+    'mailboxes/whatsapp-preload': 'electron/mailboxes/whatsapp-preload.ts',
     'main/index': 'electron/main/index.ts',
     'preload/index': 'electron/preload/index.ts',
   },
