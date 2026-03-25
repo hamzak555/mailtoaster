@@ -1,7 +1,7 @@
 # Mail Toaster Project Status
 
 ## Project Scope
-- Single-window macOS-first desktop shell for Gmail and Outlook Web.
+- Single-window desktop shell for Gmail, Outlook, Protonmail, and WhatsApp Web.
 - Local UI shell in Next.js, embedded remote mailbox views in Electron.
 - Local-only persistence for inbox metadata, session partitions, unread state, and window preferences.
 
@@ -41,9 +41,11 @@
 - Added visible-display window restoration so saved bounds do not reopen off-screen.
 - Added a single-instance app lock and background view throttling to avoid duplicate-process memory spikes.
 - Added README and supporting architecture/security/behavior docs.
+- Added Windows packaging, release workflow groundwork, and platform-specific window/updater integration.
 
 ## Remaining Tasks
 - Manual QA with real Gmail and Outlook sign-in flows.
+- Manual QA on a real Windows machine for installer, updater, taskbar badge, and window chrome behavior.
 - Optional future work such as notification controls and auto-sleep.
 
 ## Blockers

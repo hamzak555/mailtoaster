@@ -2,7 +2,7 @@
   "name": "mail-toaster",
   "version": "0.1.10",
   "private": true,
-  "description": "Minimal multi-inbox desktop shell for Gmail, Outlook, and Protonmail",
+  "description": "Minimal multi-inbox desktop shell for Gmail, Outlook, Protonmail, and WhatsApp",
   "productName": "Mail Toaster",
   "repository": {
     "type": "git",
@@ -21,8 +21,11 @@
     "icon:mac": "node scripts/generate-mac-icon.mjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win --x64",
     "pack:mac": "npm run build && electron-builder --mac dir",
-    "release:mac": "npm run build && electron-builder --mac --publish always"
+    "pack:win": "npm run build && electron-builder --win --x64 dir",
+    "release:mac": "npm run build && electron-builder --mac --publish always",
+    "release:win": "npm run build && electron-builder --win --x64 --publish always"
   },
   "build": {
     "appId": "com.mailtoaster.app",
@@ -53,6 +56,19 @@
         "dmg",
         "zip"
       ]
+    },
+    "win": {
+      "icon": "build/icon-master.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mail Toaster"
     }
   },
   "dependencies": {

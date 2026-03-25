@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   Notification as ElectronNotification,
+  nativeImage,
   type Rectangle,
   shell,
   type WebContents,
@@ -151,6 +152,45 @@ function setRequestHeader(headers: Record<string, string | string[]>, name: stri
   }
 
   headers[name] = value;
+}
+
+function escapeSvgText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function getAggregateUnreadBadgeLabel(totalUnreadCount: number, hasUnreadDot: boolean): string | null {
+  if (totalUnreadCount > 0) {
+    return totalUnreadCount > 99 ? '99+' : `${totalUnreadCount}${hasUnreadDot ? '+' : ''}`;
+  }
+
+  return hasUnreadDot ? '•' : null;
+}
+
+function createWindowsUnreadOverlayIcon(label: string) {
+  const fontSize = label.length >= 3 ? 26 : label.length === 2 ? 30 : 34;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="#D24D41" />
+      <text
+        x="32"
+        y="40"
+        text-anchor="middle"
+        font-family="Segoe UI, Arial, sans-serif"
+        font-size="${fontSize}"
+        font-weight="700"
+        fill="#FFFFFF"
+      >${escapeSvgText(label)}</text>
+    </svg>
+  `.trim();
+
+  return nativeImage
+    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+    .resize({ width: 32, height: 32 });
 }
 
 function hasUnread({ unreadState, unreadCount }: MailboxUnreadSnapshot): boolean {
@@ -1200,7 +1240,7 @@ export class MailboxManager {
   }
 
   private emitState(): void {
-    this.syncDockBadge();
+    this.syncApplicationBadge();
 
     if (this.window.isDestroyed()) {
       return;
@@ -1210,16 +1250,22 @@ export class MailboxManager {
     this.window.webContents.send('mail-toaster:state-changed', this.getState());
   }
 
-  private syncDockBadge(): void {
-    if (process.platform !== 'darwin' || !app.dock) {
+  private syncApplicationBadge(): void {
+    const totalUnreadCount = getAggregateUnreadCount(this.inboxes);
+    const hasUnreadDot = hasAggregateUnreadDot(this.inboxes);
+    const badgeLabel = getAggregateUnreadBadgeLabel(totalUnreadCount, hasUnreadDot);
+
+    if (process.platform === 'darwin' && app.dock) {
+      app.dock.setBadge(badgeLabel ?? '');
       return;
     }
 
-    const totalUnreadCount = getAggregateUnreadCount(this.inboxes);
-    const hasUnreadDot = hasAggregateUnreadDot(this.inboxes);
-    const badgeText = totalUnreadCount > 0 ? `${totalUnreadCount}${hasUnreadDot ? '+' : ''}` : hasUnreadDot ? '•' : '';
-
-    app.dock.setBadge(badgeText);
+    if (process.platform === 'win32' && !this.window.isDestroyed()) {
+      this.window.setOverlayIcon(
+        badgeLabel ? createWindowsUnreadOverlayIcon(badgeLabel) : null,
+        badgeLabel ? `${badgeLabel} unread items` : 'No unread items',
+      );
+    }
   }
 
   private clearStaleUnreadNotificationState(): void {

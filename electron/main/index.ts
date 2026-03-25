@@ -21,6 +21,7 @@ let autoUpdateCheckTimer: NodeJS.Timeout | null = null;
 let manualUpdateCheckInFlight = false;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const WINDOWS_APP_USER_MODEL_ID = 'com.mailtoaster.app';
 let appUpdateState: AppUpdateState = {
   phase: 'idle',
   currentVersion: app.getVersion(),
@@ -44,7 +45,11 @@ function isAutoUpdateInstallSupported(): boolean {
 }
 
 function getUnsupportedAutoUpdateDetail(): string {
-  return 'Automatic updates only install reliably when Mail Toaster is launched from /Applications. Move the app there or reinstall it with the PKG or DMG release.';
+  if (process.platform === 'darwin') {
+    return 'Automatic updates only install reliably when Mail Toaster is launched from /Applications. Move the app there or reinstall it with the DMG release.';
+  }
+
+  return 'Automatic updates are unavailable in the current Mail Toaster installation.';
 }
 
 function emitAppUpdateState(): void {
@@ -377,6 +382,11 @@ function setupAutoUpdates(): void {
 
 if (hasSingleInstanceLock) {
   app.setName(APP_NAME);
+
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  }
+
   registerIpcHandlers({
     getManager: () => mailboxManager,
     getAppUpdateState: () => appUpdateState,

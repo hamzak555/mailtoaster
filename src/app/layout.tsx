@@ -6,7 +6,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: 'Minimal multi-inbox shell for Gmail, Outlook, Protonmail, and WhatsApp on macOS.',
+  description: 'Minimal multi-inbox shell for Gmail, Outlook, Protonmail, and WhatsApp on desktop.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

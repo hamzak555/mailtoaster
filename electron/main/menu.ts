@@ -7,7 +7,7 @@ interface AppMenuOptions {
 export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void {
   const isMac = process.platform === 'darwin';
   const isPackaged = app.isPackaged;
-  const updateMenuItems: Electron.MenuItemConstructorOptions[] = onCheckForUpdates
+  const appMenuUpdateItems: Electron.MenuItemConstructorOptions[] = onCheckForUpdates
     ? [
         {
           label: 'Check for Updates…',
@@ -19,7 +19,7 @@ export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void
   const appMenu: Electron.MenuItemConstructorOptions[] = [
     { role: 'about' },
     { type: 'separator' },
-    ...updateMenuItems,
+    ...appMenuUpdateItems,
     { role: 'hide' },
     { role: 'hideOthers' },
     { role: 'unhide' },
@@ -49,6 +49,20 @@ export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void
   const windowMenu: Electron.MenuItemConstructorOptions[] = isMac
     ? [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
     : [{ role: 'minimize' }, { role: 'close' }];
+  const helpMenu: Electron.MenuItemConstructorOptions[] =
+    !isMac && onCheckForUpdates
+      ? [
+          {
+            label: 'Help',
+            submenu: [
+              {
+                label: 'Check for Updates…',
+                click: () => onCheckForUpdates(),
+              },
+            ],
+          },
+        ]
+      : [];
 
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
@@ -71,6 +85,7 @@ export function installAppMenu({ onCheckForUpdates }: AppMenuOptions = {}): void
       label: 'Window',
       submenu: windowMenu,
     },
+    ...helpMenu,
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

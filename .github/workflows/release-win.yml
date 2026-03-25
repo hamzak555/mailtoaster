@@ -1,0 +1,53 @@
+name: Release Windows App
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-win:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare signing assets
+        shell: pwsh
+        env:
+          WINDOWS_BUILD_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_BUILD_CERTIFICATE_BASE64 }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_BUILD_CERTIFICATE_BASE64)) {
+            Write-Host "::warning title=Windows code signing disabled::WINDOWS_BUILD_CERTIFICATE_BASE64 was not set. The Windows release will be published unsigned."
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CSC_KEY_PASSWORD)) {
+            Write-Host "::error title=Missing signing password::WINDOWS_CSC_KEY_PASSWORD is required when WINDOWS_BUILD_CERTIFICATE_BASE64 is set."
+            exit 1
+          }
+
+          $certPath = Join-Path $env:RUNNER_TEMP "mail-toaster-signing-cert.p12"
+          [System.IO.File]::WriteAllBytes($certPath, [System.Convert]::FromBase64String($env:WINDOWS_BUILD_CERTIFICATE_BASE64))
+
+          Add-Content -Path $env:GITHUB_ENV -Value "CSC_LINK=$certPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "CSC_KEY_PASSWORD=$env:WINDOWS_CSC_KEY_PASSWORD"
+
+      - name: Build and publish Windows release
+        run: npm run release:win

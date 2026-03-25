@@ -1,12 +1,13 @@
 import path from 'node:path';
 
-import { BrowserWindow, screen, type Rectangle } from 'electron';
+import { BrowserWindow, screen, type BrowserWindowConstructorOptions, type Rectangle } from 'electron';
 
 import { APP_NAME } from '@shared/mailboxes';
 
 import { AppStore } from '../persistence/app-store';
 
 const DEFAULT_WINDOW_SIZE = { width: 1480, height: 940 };
+const WINDOWS_TITLE_BAR_HEIGHT = 40;
 
 function intersectsVisibleDisplay(bounds: Rectangle): boolean {
   return screen.getAllDisplays().some((display) => {
@@ -56,7 +57,7 @@ function getInitialWindowBounds(store: AppStore): Rectangle {
 export async function createMainWindow(store: AppStore, rendererUrl: string): Promise<BrowserWindow> {
   const initialBounds = getInitialWindowBounds(store);
 
-  const window = new BrowserWindow({
+  const baseOptions: BrowserWindowConstructorOptions = {
     width: initialBounds.width,
     height: initialBounds.height,
     x: initialBounds.x,
@@ -65,17 +66,38 @@ export async function createMainWindow(store: AppStore, rendererUrl: string): Pr
     minHeight: 760,
     show: false,
     title: APP_NAME,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 12 },
     backgroundColor: '#F6EFE6',
-    vibrancy: 'sidebar',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
-  });
+  };
+
+  const windowOptions: BrowserWindowConstructorOptions =
+    process.platform === 'darwin'
+      ? {
+          ...baseOptions,
+          titleBarStyle: 'hiddenInset',
+          trafficLightPosition: { x: 16, y: 12 },
+          vibrancy: 'sidebar',
+        }
+      : process.platform === 'win32'
+        ? {
+            ...baseOptions,
+            titleBarStyle: 'hidden',
+            titleBarOverlay: {
+              color: '#F6EFE6',
+              symbolColor: '#3E2D20',
+              height: WINDOWS_TITLE_BAR_HEIGHT,
+            },
+            backgroundMaterial: 'auto',
+            autoHideMenuBar: true,
+          }
+        : baseOptions;
+
+  const window = new BrowserWindow(windowOptions);
 
   let didShowWindow = false;
   const showWindow = (): void => {

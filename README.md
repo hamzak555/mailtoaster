@@ -1,6 +1,6 @@
 # Mail Toaster
 
-Mail Toaster is a minimal macOS desktop shell for running multiple Gmail, Outlook, Protonmail, and WhatsApp inboxes inside one Electron window. The UI is local; the actual mailbox experiences stay inside isolated Electron web contents with persistent per-inbox sessions.
+Mail Toaster is a minimal desktop shell for running multiple Gmail, Outlook, Protonmail, and WhatsApp inboxes inside one Electron window. The UI is local; the actual mailbox experiences stay inside isolated Electron web contents with persistent per-inbox sessions.
 
 ## Stack
 - Electron
@@ -31,12 +31,23 @@ Create distributable release artifacts:
 npm run dist:mac
 ```
 
+## Windows Package
+```bash
+npm run pack:win
+```
+
+Create distributable release artifacts:
+
+```bash
+npm run dist:win
+```
+
 ## Install From GitHub Releases
 1. Open the [latest release](https://github.com/hamzak555/mailtoaster/releases/latest).
-2. Download the macOS DMG asset named `Mail-Toaster-<version>-arm64.dmg`.
-3. Open the DMG and drag `Mail Toaster.app` into the `Applications` folder.
-4. Launch `Mail Toaster.app` from `/Applications` or Launchpad.
-5. Keep the app in `/Applications` if you want in-app auto-updates to install correctly.
+2. On macOS, download the DMG asset named `Mail-Toaster-<version>-arm64.dmg`.
+3. On Windows, download the NSIS installer named `Mail-Toaster-<version>-x64.exe`.
+4. Install the app for your platform and launch `Mail Toaster`.
+5. On macOS, keep the app in `/Applications` if you want in-app auto-updates to install correctly.
 
 The packaged app does not need `npm run dev` or a Next.js server. The built app serves its local renderer internally.
 
@@ -55,6 +66,8 @@ Without Developer ID signing and Apple notarization, this warning will continue 
 ## Release Assets
 - `Mail-Toaster-<version>-arm64.dmg`: the file most users should download for first install.
 - `Mail-Toaster-<version>-arm64.zip`: required for macOS auto-update delivery.
+- `Mail-Toaster-<version>-x64.exe`: Windows installer.
+- `latest.yml`: required metadata for the Windows updater.
 - `latest-mac.yml`: required metadata for the updater.
 
 The GitHub auto-generated `Source code (zip)` asset is not the same as the app ZIP used by Electron auto-updates.

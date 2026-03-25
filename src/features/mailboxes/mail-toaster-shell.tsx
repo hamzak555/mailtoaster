@@ -221,8 +221,8 @@ function getSidebarUpdatePanel(state: AppUpdateState | null) {
     case 'unsupported-location':
       return {
         tone: 'danger' as const,
-        title: 'Move app to Applications',
-        detail: state.detail ?? 'Automatic updates only install reliably from /Applications.',
+        title: 'Update setup required',
+        detail: state.detail ?? 'Automatic updates are unavailable in the current installation of Mail Toaster.',
         canInstall: false,
       };
     default:
